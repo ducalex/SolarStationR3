@@ -6,6 +6,9 @@
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
+#include "config_max.h"
+// #include "config_alex.h"
+
 #include <WiFi.h>
 #include <HTTPClient.h>
 
@@ -14,26 +17,6 @@
 #include <SSD1306AsciiWire.h>
 #include <SimpleDHT.h>
 #include <Adafruit_BMP085.h>
-
-#define VBAT_PIN 36 // GPIO. The cal code assumes it's on ADC1
-#define VBAT_OFFSET 0.0 // If there is a diode or transistor in the way
-#define VBAT_MULTIPLIER 2 // If there is a voltage divider
-#define OLED_ADDRESS 0x3C // Usually 0x3C or 0x3D
-#define DHT_PIN 19 // comment to use DHT11 instead
-#define DHT_TYPE SimpleDHT22 // or SimpleDHT11
-
-#define STATION_NAME "PATATE"
-
-// #define WITHOLED
-
-const char* WIFI_SSID = "Maxou_TestIOT";
-const char* WIFI_PASSWORD = "!UnitedStatesOfSmash97!";
-const char* HTTP_UPDATE_URL = "http://";
-const char* HTTP_USERNAME = "";
-const char* HTTP_PASSWORD = "";
-const char* STATION_ID = "";
-const char* NORTH_OFFSET = "";
-const int   POLL_INTERVAL = 30; // in seconds
 
 static float temperature = 0;
 static float humidity = 0;
@@ -68,8 +51,8 @@ void setup() {
   oled.setFont(System5x7);
   oled.setScrollMode(SCROLL_MODE_AUTO);
   oled.clear();
-  oled.print("Connecting...");
   #endif
+  oled.print("Connecting...");
   
   
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -89,12 +72,15 @@ void setup() {
     httpRequest();
   }
   
-  delay(3000); // keep display on for a moment
-  
   #if WITHOLED
+  delay(3000); // keep display on for a moment
   oled.ssd1306WriteCmd(SSD1306_DISPLAYOFF); // It doesn't clear the ram but we do it on bootup
   #endif
   WiFi.disconnect(true, true); // turn off wifi, wipe wifi credentials
+
+  oled.println("Time to sleep now, I go gently into that good night");
+  oled.flush();
+  
   //esp_wifi_stop();
   esp_sleep_enable_timer_wakeup((POLL_INTERVAL - millis() / 1000) * 1000000); // wake up after interval minus time wasted here
   esp_deep_sleep_start(); // Good night
@@ -168,7 +154,8 @@ void httpRequest() {
   HTTPClient http;
   char payload[512];
   
-  http.begin(HTTP_UPDATE_URL);
+  http.begin(HTTP_UPDATE_URL, HTTP_UPDATE_PORT);
+  http.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
   sprintf(payload, "s=%st=%f&t2=%f&h=%f&p=%f&v=%f&wc=%d", 
