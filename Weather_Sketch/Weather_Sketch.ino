@@ -22,8 +22,12 @@
 #define DHT_PIN 19 // comment to use DHT11 instead
 #define DHT_TYPE SimpleDHT22 // or SimpleDHT11
 
-const char* WIFI_SSID = "d";
-const char* WIFI_PASSWORD = "";
+#define STATION_NAME "PATATE"
+
+// #define WITHOLED
+
+const char* WIFI_SSID = "Maxou_TestIOT";
+const char* WIFI_PASSWORD = "!UnitedStatesOfSmash97!";
 const char* HTTP_UPDATE_URL = "http://";
 const char* HTTP_USERNAME = "";
 const char* HTTP_PASSWORD = "";
@@ -40,7 +44,11 @@ static float voltage_bat = 0;
 
 RTC_DATA_ATTR unsigned int wake_count = 0;
 
+#if WITHOLED
 static SSD1306AsciiWire oled;
+#else
+#define oled Serial
+#endif
 
 
 void setup() {
@@ -53,14 +61,16 @@ void setup() {
     Serial.println("Weather Station version ");
     Serial.println("Type config to enter configuration mode");
   }
-  
+
+  #if WITHOLED
   Wire.begin();
   oled.begin(&Adafruit128x64, OLED_ADDRESS);
   oled.setFont(System5x7);
   oled.setScrollMode(SCROLL_MODE_AUTO);
   oled.clear();
-  
   oled.print("Connecting...");
+  #endif
+  
   
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   WiFi.setSleep(true);
@@ -81,7 +91,9 @@ void setup() {
   
   delay(3000); // keep display on for a moment
   
+  #if WITHOLED
   oled.ssd1306WriteCmd(SSD1306_DISPLAYOFF); // It doesn't clear the ram but we do it on bootup
+  #endif
   WiFi.disconnect(true, true); // turn off wifi, wipe wifi credentials
   //esp_wifi_stop();
   esp_sleep_enable_timer_wakeup((POLL_INTERVAL - millis() / 1000) * 1000000); // wake up after interval minus time wasted here
@@ -126,7 +138,10 @@ void readBattery() {
 
 
 void refreshDisplay() {
+  
+  #if WITHOLED
   oled.clear();
+  #endif
   
   if (WiFi.status() == WL_CONNECTED) {
     oled.println("Wifi: connected");
