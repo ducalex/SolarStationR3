@@ -10,6 +10,7 @@
 
 #define STATION_NAME "PATATE"
 
+#define LIGHTSLEEPMODE
 // #define WITHOLED
 
 const char* WIFI_SSID = "Maxou_TestIOT";

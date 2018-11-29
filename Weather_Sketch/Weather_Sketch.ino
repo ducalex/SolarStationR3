@@ -35,11 +35,13 @@ static SSD1306AsciiWire oled;
 
 
 void setup() {
+  Serial.begin(115200);
+}
+
+void loop() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector. maybe we should set it to lowest instead of disabling
   wake_count++;
 
-  Serial.begin(115200);
-  
   if (rtc_get_reset_reason(0) != DEEPSLEEP_RESET) {
     Serial.println("Weather Station version ");
     Serial.println("Type config to enter configuration mode");
@@ -81,9 +83,15 @@ void setup() {
   oled.println("Time to sleep now, I go gently into that good night");
   oled.flush();
   
-  //esp_wifi_stop();
   esp_sleep_enable_timer_wakeup((POLL_INTERVAL - millis() / 1000) * 1000000); // wake up after interval minus time wasted here
+
+  #ifdef LIGHTSLEEPMODE
+  esp_wifi_stop();
+  esp_light_sleep_start();
+  esp_wifi_start();
+  #else
   esp_deep_sleep_start(); // Good night
+  #endif
 }
 
 
@@ -173,9 +181,4 @@ void httpRequest() {
   }
   
   http.end();
-}
-
-
-void loop() {
-
 }
