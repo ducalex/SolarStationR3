@@ -153,8 +153,10 @@ void httpRequest() {
   
   HTTPClient http;
   char payload[512];
+
   
-  http.begin(HTTP_UPDATE_URL, HTTP_UPDATE_PORT);
+  http.begin(HTTP_UPDATE_URL);
+  
   http.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
