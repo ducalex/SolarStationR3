@@ -15,6 +15,7 @@
 
 const char* WIFI_SSID = "Maxou_TestIOT";
 const char* WIFI_PASSWORD = "!UnitedStatesOfSmash97!";
+#define     WIFI_TIMEOUT_MS 10000
 const char* HTTP_UPDATE_URL = "http://";
 const int   HTTP_UPDATE_PORT = 80;
 const char* HTTP_USERNAME = "";

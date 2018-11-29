@@ -35,6 +35,8 @@ static SSD1306AsciiWire oled;
 
 
 void setup() {
+  unsigned long timeTicks = millis();
+  
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector. maybe we should set it to lowest instead of disabling
   wake_count++;
 
@@ -61,7 +63,7 @@ void setup() {
   readSensors(); // Do that while it's connecting
   readBattery(); // maybe we should do that before turning on wifi? voltage drops up to .2V when wifi is active
   
-  while(WiFi.status() != WL_CONNECTED && millis() < 10000) {
+  while(WiFi.status() != WL_CONNECTED && millis() < WIFI_TIMEOUT_MS) {
     delay(500);
     oled.print(".");
   }
@@ -78,6 +80,9 @@ void setup() {
   #endif
   WiFi.disconnect(true, true); // turn off wifi, wipe wifi credentials
 
+  oled.print("Time to execute: ");
+  oled.print(millis() - timeTicks);
+  oled.println(" ms");
   oled.println("Time to sleep now, I go gently into that good night");
   oled.flush();
   
