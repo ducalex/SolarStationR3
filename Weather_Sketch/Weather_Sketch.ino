@@ -39,6 +39,8 @@ void setup() {
 }
 
 void loop() {
+  unsigned long startMS = millis();
+  
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector. maybe we should set it to lowest instead of disabling
   wake_count++;
 
@@ -81,6 +83,14 @@ void loop() {
   WiFi.disconnect(true, true); // turn off wifi, wipe wifi credentials
 
   oled.println("Time to sleep now, I go gently into that good night");
+  oled.print("Time: ");
+  oled.print(millis() - startMS);
+  oled.println(" ms");
+  #ifdef LIGHTSLEEPMODE
+  oled.println("light sleep ..");
+  #else
+  oled.println("deep sleep ..");
+  #endif
   oled.flush();
   
   esp_sleep_enable_timer_wakeup((POLL_INTERVAL - millis() / 1000) * 1000000); // wake up after interval minus time wasted here
