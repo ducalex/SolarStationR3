@@ -1,3 +1,4 @@
+
 #ifndef WEATHERSTATION_CONFIG
 #define WEATHERSTATION_CONFIG
 
@@ -11,6 +12,7 @@
 
 #define STATION_NAME "PATATE"
 
+//#define LIGHTSLEEPMODE
 #define WITHOLED
 
 const char* WIFI_SSID = "Maxou_TestIOT";
@@ -24,6 +26,5 @@ const char* STATION_ID = "";
 const char* NORTH_OFFSET = "";
 const int   POLL_INTERVAL = 30; // in seconds
 const int   HTTP_REQUEST_TIMEOUT_MS = 30*1000;
-
 
 #endif

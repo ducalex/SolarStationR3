@@ -35,13 +35,13 @@ static SSD1306AsciiWire oled;
 
 
 void setup() {
-  unsigned long timeTicks = millis();
-  
+  Serial.begin(115200);
+}
+
+void loop() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector. maybe we should set it to lowest instead of disabling
   wake_count++;
 
-  Serial.begin(115200);
-  
   if (rtc_get_reset_reason(0) != DEEPSLEEP_RESET) {
     Serial.println("Weather Station version ");
     Serial.println("Type config to enter configuration mode");
@@ -63,7 +63,7 @@ void setup() {
   readSensors(); // Do that while it's connecting
   readBattery(); // maybe we should do that before turning on wifi? voltage drops up to .2V when wifi is active
   
-  while(WiFi.status() != WL_CONNECTED && millis() < WIFI_TIMEOUT_MS) {
+  while(WiFi.status() != WL_CONNECTED && millis() < 10000) {
     delay(500);
     oled.print(".");
   }
@@ -80,15 +80,18 @@ void setup() {
   #endif
   WiFi.disconnect(true, true); // turn off wifi, wipe wifi credentials
 
-  oled.print("Time to execute: ");
-  oled.print(millis() - timeTicks);
-  oled.println(" ms");
   oled.println("Time to sleep now, I go gently into that good night");
   oled.flush();
   
-  //esp_wifi_stop();
   esp_sleep_enable_timer_wakeup((POLL_INTERVAL - millis() / 1000) * 1000000); // wake up after interval minus time wasted here
+
+  #ifdef LIGHTSLEEPMODE
+  esp_wifi_stop();
+  esp_light_sleep_start();
+  esp_wifi_start();
+  #else
   esp_deep_sleep_start(); // Good night
+  #endif
 }
 
 
@@ -178,9 +181,4 @@ void httpRequest() {
   }
   
   http.end();
-}
-
-
-void loop() {
-
 }
