@@ -100,15 +100,15 @@ void loop() {
 
   //esp_bluedroid_disable();
   //esp_bt_controller_disable();
-  //esp_wifi_stop();
-  //WiFi.mode(WIFI_OFF);
- // btStop();
+  esp_wifi_stop();
+  WiFi.mode(WIFI_OFF);
+  btStop();
   
-  esp_sleep_enable_timer_wakeup((POLL_INTERVAL - millis() / 1000) * 1000000); // wake up after interval minus time wasted here
-
+  esp_sleep_enable_timer_wakeup((POLL_INTERVAL - (millis() - startMS) / 1000) * 1000000); // wake up after interval minus time wasted here
+  
   esp_light_sleep_start();
   #else
-  esp_sleep_enable_timer_wakeup((POLL_INTERVAL - millis() / 1000) * 1000000); // wake up after interval minus time wasted here
+  esp_sleep_enable_timer_wakeup((POLL_INTERVAL - (millis() - startMS) / 1000) * 1000000); // wake up after interval minus time wasted here
   esp_deep_sleep_start(); // Good night
   #endif
 }

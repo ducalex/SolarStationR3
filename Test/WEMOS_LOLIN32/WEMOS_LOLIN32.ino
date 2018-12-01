@@ -21,13 +21,18 @@ void setup() {
   // put your setup code here, to run once:
 
   Serial.begin(115200);
+  pinMode(LED_BUILTIN, OUTPUT); 
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
   Serial.println("GOING TO SLEEP ...");
 
-  esp_sleep_enable_timer_wakeup((POLL_INTERVAL_MS - millis() / 1000) * 1000000); // wake up after interval minus time wasted here
+  digitalWrite(LED_BUILTIN, LOW);
+  delay(10000);
+  digitalWrite(LED_BUILTIN, HIGH);
+
+  esp_sleep_enable_timer_wakeup((POLL_INTERVAL_MS / 1000) * 1000000); // wake up after interval minus time wasted here
 
   esp_light_sleep_start();
 }
