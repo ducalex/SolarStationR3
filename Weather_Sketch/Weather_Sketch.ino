@@ -1,6 +1,8 @@
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
 #include <esp_pm.h>
+#include <esp_bt.h>
+#include <esp_sleep.h>
 #include <esp_wifi.h>
 #include <rom/rtc.h>
 #include "soc/soc.h"
@@ -60,6 +62,7 @@ void loop() {
   
   
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  //btStart();
   WiFi.setSleep(true);
   
   readSensors(); // Do that while it's connecting
@@ -93,13 +96,19 @@ void loop() {
   #endif
   oled.flush();
   
+  #ifdef LIGHTSLEEPMODE
+
+  //esp_bluedroid_disable();
+  //esp_bt_controller_disable();
+  //esp_wifi_stop();
+  //WiFi.mode(WIFI_OFF);
+ // btStop();
+  
   esp_sleep_enable_timer_wakeup((POLL_INTERVAL - millis() / 1000) * 1000000); // wake up after interval minus time wasted here
 
-  #ifdef LIGHTSLEEPMODE
-  esp_wifi_stop();
   esp_light_sleep_start();
-  esp_wifi_start();
   #else
+  esp_sleep_enable_timer_wakeup((POLL_INTERVAL - millis() / 1000) * 1000000); // wake up after interval minus time wasted here
   esp_deep_sleep_start(); // Good night
   #endif
 }
@@ -139,6 +148,27 @@ void readBattery() {
   
   voltage_bat = (float)esp_adc_cal_raw_to_voltage((int)value, &adc_chars) / 1000 * VBAT_MULTIPLIER + VBAT_OFFSET;
 }
+/*
+void readBattery() {
+  adc1_config_width(ADC_WIDTH_BIT_12);
+  adc1_config_channel_atten(ADC1_CHANNEL_0,ADC_ATTEN_DB_0);
+
+  esp_adc_cal_characteristics_t *adc_chars = (esp_adc_cal_characteristics_t*)calloc(1, sizeof(esp_adc_cal_characteristics_t));
+  esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, ESP_ADC_CAL_VAL_DEFAULT_VREF, adc_chars);
+  
+  float value = 0.0;
+  
+  for(int i = 0; i < VBAT_SAMPLE; i++) {
+   // int input = analogRead(VBAT_PIN);
+    uint32_t input = (uint32_t )adc1_get_raw(ADC1_CHANNEL_0);
+    
+    value = value * (1.0 - (1.0 / VBAT_SAMPLE)) + (float)input * (1.0 / VBAT_SAMPLE); // this seems to be a bit closer to reality
+    
+    delay(1);
+  }
+  
+  voltage_bat = value; //(float)esp_adc_cal_raw_to_voltage((int)value, adc_chars) / VBAT_MULTIPLIER; //(float)esp_adc_cal_raw_to_voltage((int)value, adc_chars) / 1000 * VBAT_MULTIPLIER + VBAT_OFFSET;
+}*/
 
 
 void refreshDisplay() {
@@ -159,6 +189,7 @@ void refreshDisplay() {
   oled.printf("Pressure: %.2f kPa\n", pressure);
   oled.printf("Altitude: %.2f m\n", altitude);
   //oled.println();
+  oled.printf("Wakecount: %d m\n", wake_count);
   
   if (humidity != 0.0 || temperature != 0.0) {
     oled.printf("DHT: %.2f C, %.2f%%\n", temperature, humidity);

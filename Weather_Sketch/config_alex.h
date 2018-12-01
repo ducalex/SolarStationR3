@@ -6,6 +6,8 @@
 #define VBAT_PIN 36 // GPIO. The cal code assumes it's on ADC1
 #define VBAT_OFFSET 0.0 // If there is a diode or transistor in the way
 #define VBAT_MULTIPLIER 2 // If there is a voltage divider
+#define VBAT_SAMPLE 50 // How many sample ?
+
 #define OLED_ADDRESS 0x3C // Usually 0x3C or 0x3D
 #define DHT_PIN 19 // comment to use DHT11 instead
 #define DHT_TYPE SimpleDHT22 // or SimpleDHT11
