@@ -10,7 +10,7 @@
 
 #include <WiFi.h>
 #include <HTTPClient.h>
-
+#include <DHT.h>;
 #include <Wire.h>
 
 const int   POLL_INTERVAL = 15; // in seconds
@@ -30,16 +30,29 @@ const char* HTTP_UPDATE_URL = "http://192.168.5.214";
 const int   HTTP_UPDATE_PORT = 9999;
 
 RTC_DATA_ATTR unsigned int wake_count = 0;
+
+#define DHTPIN 15     // what pin we're connected to
+#define DHTTYPE DHT11   // DHT 22  (AM2302)
+DHT dht(DHTPIN, DHTTYPE);
+
 RTC_DATA_ATTR bool m_wifiMode = true;
 
 static float voltage_bat = 0;
+static float dht_TempC = 0;
+static float dht_TempHum = 0;
 
 void setup() {
   //btStart();
-  WiFi.setSleep(true);
+
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector. maybe we should set it to lowest instead of disabling
 
   Serial.begin(115200);
+  dht.begin();
+  
   pinMode(LED_BUILTIN, OUTPUT); 
+  pinMode(A0, INPUT);
+  
+  digitalWrite(LED_BUILTIN, HIGH); // No light ...
 }
 
 void loop() {
@@ -51,15 +64,8 @@ void loop() {
     
     Serial.println("WORK MODE");
     
-    for(int i = 0; i < 3; i++) {
-      digitalWrite(LED_BUILTIN, LOW);
-      delay(200);
-      digitalWrite(LED_BUILTIN, HIGH);
-      delay(200);
-    }
-
     // Do some useful task ...
-    while(WiFi.status() != WL_CONNECTED && (millis() - startMS) < 30000) {
+    while(WiFi.status() != WL_CONNECTED && (millis() - startMS) < 120*1000) {
       //
       // 100 ms timeslot for usefull task
       // followed by 900 ms until Quokka kiss him.
@@ -87,32 +93,41 @@ void loop() {
   
     // put your setup code here, to run once:
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    WiFi.setSleep(true);
     while(WiFi.status() != WL_CONNECTED && millis() < 10000) {
       delay(500);
       Serial.print(".");
     }
-  
-    readBattery();
-    
+   
     if (WiFi.status() == WL_CONNECTED) {
+      readBattery();
+      readTemp();
+        
+      Serial.printf("Battery: %.2f V\n", voltage_bat);
+      Serial.print("Time: ");
+      Serial.print(millis() - startMS);
+      Serial.println(" ms");
+      
+      Serial.print("Humidity: ");
+      Serial.print(dht_TempHum);
+      Serial.print(" %, Temp: ");
+      Serial.println(dht_TempC);
+    
       httpRequest();
-    }
 
-    
-    Serial.println("Time to sleep now, I go gently into that good night");
-    
-    Serial.printf("Battery: %.2f V\n", voltage_bat);
-    Serial.print("Time: ");
-    Serial.print(millis() - startMS);
-    Serial.println(" ms");
-    
-    Serial.println("GOING TO SLEEP ...");
-    Serial.flush();
+      Serial.println("GOING TO SLEEP ...");
+      Serial.flush();
+      
+      Serial.println("Time to sleep now, I go gently into that good night");
+    }
+    else {
+      Serial.println("Time to sleep now, can't connect to wifi :(");
+    }
     
     digitalWrite(LED_BUILTIN, HIGH);
     
     //esp_sleep_enable_timer_wakeup((POLL_INTERVAL - (millis() - startMS) / 1000) * 1000000); // wake up after interval minus time wasted here
-    m_wifiMode = false;
+    m_wifiMode = false;    
     
     esp_sleep_enable_timer_wakeup(250); // Basically we just want to reset ...
     esp_deep_sleep_start(); // Good night
@@ -135,6 +150,11 @@ void readBattery() {
   voltage_bat = (float)esp_adc_cal_raw_to_voltage((int)value, &adc_chars) / 1000 * VBAT_MULTIPLIER + VBAT_OFFSET;
 }
 
+void readTemp() {
+  dht_TempC = (float)dht.readTemperature();
+  dht_TempHum = (float)dht.readHumidity();
+}
+
 void httpRequest() {
   Serial.print("HTTP: POST...");
   
@@ -146,8 +166,8 @@ void httpRequest() {
   http.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
-  sprintf(payload, "s=%s&v=%f&wc=%d", 
-      "TEST2", voltage_bat, wake_count);
+  sprintf(payload, "s=%s&v=%f&wc=%d&temp=%f&humidity=%f", 
+      "TEST2", voltage_bat, wake_count,dht_TempC, dht_TempHum);
   
   int httpCode = http.POST(payload);
   
