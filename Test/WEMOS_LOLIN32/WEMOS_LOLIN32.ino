@@ -36,10 +36,12 @@ RTC_DATA_ATTR unsigned int wake_count = 0;
 DHT dht(DHTPIN, DHTTYPE);
 
 RTC_DATA_ATTR bool m_wifiMode = true;
+RTC_DATA_ATTR int m_lastStartError = 0;
 
 static float voltage_bat = 0;
 static float dht_TempC = 0;
 static float dht_TempHum = 0;
+
 
 void setup() {
   //btStart();
@@ -53,6 +55,12 @@ void setup() {
   pinMode(A0, INPUT);
   
   digitalWrite(LED_BUILTIN, HIGH); // No light ...
+
+  // Morse ....
+  if (m_lastStartError > 0) {
+    morseError(m_lastStartError);
+    m_lastStartError = 0;
+  }
 }
 
 void loop() {
@@ -65,7 +73,7 @@ void loop() {
     Serial.println("WORK MODE");
     
     // Do some useful task ...
-    while(WiFi.status() != WL_CONNECTED && (millis() - startMS) < 120*1000) {
+    while((millis() - startMS) < 120*1000) {
       //
       // 100 ms timeslot for usefull task
       // followed by 900 ms until Quokka kiss him.
@@ -88,20 +96,29 @@ void loop() {
     wake_count++;
     
     Serial.println("WIFI MODE");
+
+    m_lastStartError = 1;
     
     digitalWrite(LED_BUILTIN, LOW);
   
     // put your setup code here, to run once:
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     WiFi.setSleep(true);
+    
+    m_lastStartError = 2;
+    
     while(WiFi.status() != WL_CONNECTED && millis() < 10000) {
       delay(500);
       Serial.print(".");
     }
+    
+    m_lastStartError = 3;
    
     if (WiFi.status() == WL_CONNECTED) {
       readBattery();
+      m_lastStartError = 4;
       readTemp();
+      m_lastStartError = 5;
         
       Serial.printf("Battery: %.2f V\n", voltage_bat);
       Serial.print("Time: ");
@@ -112,8 +129,11 @@ void loop() {
       Serial.print(dht_TempHum);
       Serial.print(" %, Temp: ");
       Serial.println(dht_TempC);
-    
+      m_lastStartError = 6;
+
       httpRequest();
+      
+      m_lastStartError = 7;
 
       Serial.println("GOING TO SLEEP ...");
       Serial.flush();
@@ -123,12 +143,15 @@ void loop() {
     else {
       Serial.println("Time to sleep now, can't connect to wifi :(");
     }
-    
+
+    m_lastStartError = 8;
+
     digitalWrite(LED_BUILTIN, HIGH);
     
     //esp_sleep_enable_timer_wakeup((POLL_INTERVAL - (millis() - startMS) / 1000) * 1000000); // wake up after interval minus time wasted here
     m_wifiMode = false;    
     
+    m_lastStartError = 0; // no error
     esp_sleep_enable_timer_wakeup(250); // Basically we just want to reset ...
     esp_deep_sleep_start(); // Good night
     //esp_light_sleep_start();
@@ -179,4 +202,58 @@ void httpRequest() {
   }
   
   http.end();
+}
+
+void morseError(int morse) {
+  digitalWrite(LED_BUILTIN, HIGH);
+  Serial.println("morse");
+  Serial.println(morse);
+  switch(morse) {
+    case 0: // - - - - -
+       morse_dash(); morse_dash(); morse_dash(); morse_dash(); morse_dash();
+       break;
+    case 1: // . - - - -
+       morse_dot(); morse_dash(); morse_dash(); morse_dash(); morse_dash();
+       break;
+    case 2: // . . - - -
+       morse_dot(); morse_dot(); morse_dash(); morse_dash(); morse_dash();
+       break;
+    case 3: // . . . - -
+       morse_dot(); morse_dot(); morse_dot(); morse_dash(); morse_dash();
+       break;
+    case 4: // . . . . -
+       morse_dot(); morse_dot(); morse_dot(); morse_dot(); morse_dash();
+       break;
+    case 5: // . . . . .
+       morse_dot(); morse_dot(); morse_dot(); morse_dot(); morse_dot();
+       break;
+    case 6: // - - - - .
+       morse_dash(); morse_dash(); morse_dash(); morse_dash(); morse_dot();
+       break;
+    case 7: // - - - . .
+       morse_dash(); morse_dash(); morse_dash(); morse_dot(); morse_dot();
+       break;
+    case 8: // - - . . .
+       morse_dash(); morse_dash(); morse_dot(); morse_dot(); morse_dot();
+       break;
+    case 9: // - . . . .
+       morse_dash(); morse_dot(); morse_dot(); morse_dot(); morse_dot();
+       break;
+  }
+
+  delay(3000);
+}
+
+void morse_dash() {
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(1000);
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(500);
+}
+
+void morse_dot() {
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(250);
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(500);
 }
