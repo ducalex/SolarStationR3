@@ -47,8 +47,8 @@ RTC_DATA_ATTR bool m_wifiMode = true;
 RTC_DATA_ATTR int m_lastStartError = 0;
 
 static float voltage_bat = 0;
-static int16_t voltage_batRAW = 0;
-static float voltage_lightsensor = 0;
+static int voltage_batRAW = 0;
+static int voltage_lightsensor = 0;
 static float dht_TempC = 0;
 static float dht_TempHum = 0;
 
