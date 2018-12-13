@@ -7,6 +7,10 @@
 #include <rom/rtc.h>
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
+#include <Adafruit_ADS1015.h>
+
+#include <SSD1306Ascii.h>
+#include <SSD1306AsciiWire.h>
 
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -20,7 +24,7 @@ const int   HTTP_REQUEST_TIMEOUT_MS = 5*1000;
 
 #define VBAT_PIN 36 // GPIO. The cal code assumes it's on ADC1
 #define VBAT_OFFSET 0.0 // If there is a diode or transistor in the way
-#define VBAT_MULTIPLIER 2 // If there is a voltage divider
+#define VBAT_MULTIPLIER 2.0 // If there is a voltage divider
 #define VBAT_SAMPLE 50 // How many sample ?
 
 
@@ -31,14 +35,20 @@ const int   HTTP_UPDATE_PORT = 9999;
 
 RTC_DATA_ATTR unsigned int wake_count = 0;
 
+#define OLED_ADDRESS 0x3C
+
 #define DHTPIN 15     // what pin we're connected to
 #define DHTTYPE DHT11   // DHT 22  (AM2302)
 DHT dht(DHTPIN, DHTTYPE);
+Adafruit_ADS1115 ads; 
+SSD1306AsciiWire oled;
 
 RTC_DATA_ATTR bool m_wifiMode = true;
 RTC_DATA_ATTR int m_lastStartError = 0;
 
 static float voltage_bat = 0;
+static int16_t voltage_batRAW = 0;
+static float voltage_lightsensor = 0;
 static float dht_TempC = 0;
 static float dht_TempHum = 0;
 
@@ -50,6 +60,16 @@ void setup() {
 
   Serial.begin(115200);
   dht.begin();
+
+  
+  Wire.begin();
+  oled.begin(&Adafruit128x64, OLED_ADDRESS);
+  oled.setFont(System5x7);
+  oled.setScrollMode(SCROLL_MODE_AUTO);
+  oled.clear();
+
+  ads.begin();
+  ads.setGain(GAIN_ONE);
   
   pinMode(LED_BUILTIN, OUTPUT); 
   pinMode(A0, INPUT);
@@ -71,6 +91,8 @@ void loop() {
     wake_count++;
     
     Serial.println("WORK MODE");
+    oled.println("Potatoes industries");
+    oled.println("Sampling ...");
     
     // Do some useful task ...
     while((millis() - startMS) < 120*1000) {
@@ -79,14 +101,23 @@ void loop() {
       // followed by 900 ms until Quokka kiss him.
       Serial.println(" ... ...");
       Serial.flush();
-      delay(100);
 
+      readLightSensor();
+      readBattery();
+      oled.print("Light: ");
+      oled.println(voltage_lightsensor);
+      oled.print(", batt: ");
+      oled.print(voltage_bat);
+      oled.println("v");
+      
       // Sleep for 900 ms
       esp_sleep_enable_timer_wakeup(900 * 1000); // wake up after interval minus time wasted here  
       esp_light_sleep_start();
       wake_count++;
     }
 
+    oled.ssd1306WriteCmd(SSD1306_DISPLAYOFF);
+    
     // Ask wifi to operate on next boot ...
     m_wifiMode = true;
     esp_sleep_enable_timer_wakeup(250); // Basically we just want to reset ...
@@ -97,6 +128,8 @@ void loop() {
     
     Serial.println("WIFI MODE");
 
+    oled.println("Potatoes industries");
+  
     m_lastStartError = 1;
     
     digitalWrite(LED_BUILTIN, LOW);
@@ -119,12 +152,15 @@ void loop() {
       m_lastStartError = 4;
       readTemp();
       m_lastStartError = 5;
+      readLightSensor();
         
       Serial.printf("Battery: %.2f V\n", voltage_bat);
       Serial.print("Time: ");
       Serial.print(millis() - startMS);
       Serial.println(" ms");
       
+      Serial.print("light sensor: ");
+      Serial.println(voltage_lightsensor);
       Serial.print("Humidity: ");
       Serial.print(dht_TempHum);
       Serial.print(" %, Temp: ");
@@ -147,6 +183,7 @@ void loop() {
     m_lastStartError = 8;
 
     digitalWrite(LED_BUILTIN, HIGH);
+    oled.ssd1306WriteCmd(SSD1306_DISPLAYOFF);
     
     //esp_sleep_enable_timer_wakeup((POLL_INTERVAL - (millis() - startMS) / 1000) * 1000000); // wake up after interval minus time wasted here
     m_wifiMode = false;    
@@ -159,6 +196,9 @@ void loop() {
 }
 
 void readBattery() {
+  voltage_batRAW = ads.readADC_SingleEnded(3);
+  voltage_bat = voltage_batRAW * 0.125d * VBAT_MULTIPLIER * 0.001;
+  /*
   static esp_adc_cal_characteristics_t adc_chars;
   esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 1100, &adc_chars); // We could calibrate vref...
 
@@ -170,7 +210,11 @@ void readBattery() {
     delay(1);
   }
   
-  voltage_bat = (float)esp_adc_cal_raw_to_voltage((int)value, &adc_chars) / 1000 * VBAT_MULTIPLIER + VBAT_OFFSET;
+  voltage_bat = (float)esp_adc_cal_raw_to_voltage((int)value, &adc_chars) / 1000 * VBAT_MULTIPLIER + VBAT_OFFSET;*/
+}
+
+void readLightSensor() {
+  voltage_lightsensor = ads.readADC_SingleEnded(1) ;
 }
 
 void readTemp() {
@@ -189,8 +233,8 @@ void httpRequest() {
   http.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
-  sprintf(payload, "s=%s&v=%f&wc=%d&temp=%f&humidity=%f", 
-      "TEST2", voltage_bat, wake_count,dht_TempC, dht_TempHum);
+  sprintf(payload, "s=%s&v=%f&wc=%d&temp=%f&humidity=%f&light=%d&battraw=%d", 
+      "TEST2", voltage_bat, wake_count,dht_TempC, dht_TempHum, voltage_lightsensor, voltage_batRAW);
   
   int httpCode = http.POST(payload);
   
