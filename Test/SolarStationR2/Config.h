@@ -5,7 +5,8 @@
 #define VBAT_MULTIPLIER 2.0 // If there is a voltage divider
 
 // Power management
-#define POWERMNG_EMERGENCY_POWER_VOLT 3.75d
+#define POWERMNG_EMERGENCY_POWER_VOLT_MIN 3.5d
+#define POWERMNG_EMERGENCY_POWER_VOLT_MAX 3.8d
 
 // Wifi
 const char* WIFI_SSID = "Maxou_TestIOT";

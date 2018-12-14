@@ -71,7 +71,7 @@ void loop() {
   
   // Do some useful task ...
   int measureTimeS = 
-    (m_powerSaveMode ? 180 : 60);
+    (m_powerSaveMode ? 120 : 60);
   
   if (m_firstStart)
     measureTimeS = 1; // We want to send a message immediately ...
@@ -127,7 +127,10 @@ void loop() {
   }
   
   // Next loop in power saving mode ?
-  m_powerSaveMode = m_batteryVolt < POWERMNG_EMERGENCY_POWER_VOLT;
+  if (!m_powerSaveMode && m_batteryVolt < POWERMNG_EMERGENCY_POWER_VOLT_MIN) 
+    m_powerSaveMode = true;
+  else if (m_powerSaveMode && m_batteryVolt > POWERMNG_EMERGENCY_POWER_VOLT_MAX) 
+    m_powerSaveMode = false;
 
   oled.clear();
   oled.println("Potatoes industries");
@@ -192,7 +195,7 @@ void httpRequest() {
   http.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
-  sprintf(payload, "s=%s&battv=%f&wc=%d&boxtemp=%f&boxhumidity=%f&light=%d", 
+  sprintf(payload, "s=%s&battv=%f&wc=%d&boxtemp=%.2f&boxhumidity=%.2f&light=%d", 
       "TEST2", m_batteryVolt, wake_count,m_interiorTempC, m_interiorHumidityPERC, m_lightsensorRAW);
   
   int httpCode = http.POST(payload);
