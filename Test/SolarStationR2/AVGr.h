@@ -3,17 +3,20 @@ class AVGr
   private:
   float m_currentAvg;
   int m_count;
+  int m_maximum;
   
   public:
-  AVGr() 
+  AVGr(int maximum) 
   {
-    m_currentAvg = 0;
-    m_count = 0;  
+    m_maximum = maximum;
+    m_currentAvg = 0.0;
+    m_count = 0;
   }
 
   void add(float newValue) {
-    m_count++;
-    m_currentAvg = (m_currentAvg * (((float)m_count - 1) / (float)m_count)) + newValue / m_count;
+    if (m_count + 1 < m_maximum)
+      m_count++;      
+    m_currentAvg = (m_currentAvg * (((float)m_count - 1) / (float)m_count)) + newValue / (float)m_count;
   }
 
   float getAvg() {

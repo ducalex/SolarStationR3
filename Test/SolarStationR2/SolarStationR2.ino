@@ -32,10 +32,10 @@ Adafruit_ADS1115 ads;
 SSD1306AsciiWire oled;
 
 // Global sensor values
-AVGr m_batteryVolt;
-AVGr m_lightsensorRAW;
-AVGr m_interiorTempC;
-AVGr m_interiorHumidityPERC;
+RTC_DATA_ATTR AVGr m_batteryVolt(MEASUREMENTAVGCOUNT);
+RTC_DATA_ATTR AVGr m_lightsensorRAW(MEASUREMENTAVGCOUNT);
+RTC_DATA_ATTR AVGr m_interiorTempC(MEASUREMENTAVGCOUNT);
+RTC_DATA_ATTR AVGr m_interiorHumidityPERC(MEASUREMENTAVGCOUNT);
 
 
 void setup() {
@@ -71,17 +71,17 @@ void loop() {
   oled.clear();
   
   // Do some useful task ...
-  int measureTimeS = 
+  int measureCount = 
     (m_powerSaveMode ? 120 : 60);
   
   if (m_firstStart)
-    measureTimeS = 1; // We want to send a message immediately ...
+    measureCount = 1; // We want to send a message immediately ...
 
   m_firstStart = false;
-  
+
   readTemp();
   
-  while((millis() - startMS) < measureTimeS*1000) {
+  while(measureCount--) {
     //
     // 100 ms timeslot for usefull task
     // followed by 900 ms until Quokka kiss him. 
@@ -89,10 +89,9 @@ void loop() {
     
     readBattery();
     readLightSensor();
-
-    // Display on screen ...
-    if ((millis() - lastOLEDUpdateMS > 5000 || lastOLEDUpdateMS == 0) && !m_powerSaveMode) {     
-      readTemp();
+ 
+      // Display on screen ...
+    if ((millis() - lastOLEDUpdateMS > 5000 || lastOLEDUpdateMS == 0) && !m_powerSaveMode) {    
 
       oled.setCursor(0, 0);
       oled.println("Potatoes industries");
@@ -106,7 +105,9 @@ void loop() {
         m_lightsensorRAW.getAvg(),
         wake_count);
       oled.print(buffer);
-
+      
+      delay(25); // This delays seems to resolve a lot of problem related to OLED and ADC communication.
+      
       lastOLEDUpdateMS = millis();
     }
 
@@ -128,9 +129,9 @@ void loop() {
   }
   
   // Next loop in power saving mode ?
-  if (!m_powerSaveMode && m_batteryVolt.getAvg() < POWERMNG_EMERGENCY_POWER_VOLT_MIN || wake_count == 1) 
+  if ((!m_powerSaveMode && m_batteryVolt.getAvg() < POWERMNG_EMERGENCY_POWER_VOLT_MIN) || (wake_count == 1 && m_batteryVolt.getAvg() < POWERMNG_EMERGENCY_POWER_VOLT_BOOT)) 
     m_powerSaveMode = true;
-  else if (m_powerSaveMode && m_batteryVolt.getAvg() > POWERMNG_EMERGENCY_POWER_VOLT_MAX) 
+  else if ((m_powerSaveMode && m_batteryVolt.getAvg() > POWERMNG_EMERGENCY_POWER_VOLT_MAX )) 
     m_powerSaveMode = false;
 
   oled.clear();
@@ -169,14 +170,19 @@ void loop() {
   esp_deep_sleep_start(); // Good night
 }
 
-void readBattery() {
+void readBattery() { 
   int batteryVoltRAW = ads.readADC_SingleEnded(VADC_INPUT_BATTERY);
-  
-  m_batteryVolt.add( (float)batteryVoltRAW * VADC_PERBIT * VBAT_MULTIPLIER);
+  float finalVoltage = (float)batteryVoltRAW * VADC_PERBIT * VBAT_MULTIPLIER;
+
+  Serial.print("volt: ");
+  Serial.println(finalVoltage);
+  m_batteryVolt.add( finalVoltage );
 }
 
 void readLightSensor() {
-  m_lightsensorRAW.add( ads.readADC_SingleEnded(VADC_INPUT_LIGHTSENSOR) );
+  int lightsensorRAW = ads.readADC_SingleEnded(VADC_INPUT_LIGHTSENSOR);
+  
+  m_lightsensorRAW.add( lightsensorRAW );
 }
 
 void readTemp() {
