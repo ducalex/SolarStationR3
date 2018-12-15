@@ -1,4 +1,5 @@
 #include "Config.h"
+#include "AVGr.h"
 
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
@@ -31,10 +32,10 @@ Adafruit_ADS1115 ads;
 SSD1306AsciiWire oled;
 
 // Global sensor values
-float m_batteryVolt = 0;
-int m_lightsensorRAW = 0;
-float m_interiorTempC = 0;
-float m_interiorHumidityPERC = 0;
+AVGr m_batteryVolt;
+AVGr m_lightsensorRAW;
+AVGr m_interiorTempC;
+AVGr m_interiorHumidityPERC;
 
 
 void setup() {
@@ -98,11 +99,11 @@ void loop() {
       oled.println("values:");
       char buffer[150];
       sprintf(buffer, 
-        "battery: %.2f v\ntemp: %.2f C\nhumidity: %.2f %%\nlight: %d /bits\nwakeup: %d",
-        m_batteryVolt,
-        m_interiorTempC,
-        m_interiorHumidityPERC,
-        m_lightsensorRAW,
+        "battery: %.2f v\ntemp: %.2f C\nhumidity: %.2f %%\nlight: %.2f /bits\nwakeup: %d",
+        m_batteryVolt.getAvg(),
+        m_interiorTempC.getAvg(),
+        m_interiorHumidityPERC.getAvg(),
+        m_lightsensorRAW.getAvg(),
         wake_count);
       oled.print(buffer);
 
@@ -127,9 +128,9 @@ void loop() {
   }
   
   // Next loop in power saving mode ?
-  if (!m_powerSaveMode && m_batteryVolt < POWERMNG_EMERGENCY_POWER_VOLT_MIN) 
+  if (!m_powerSaveMode && m_batteryVolt.getAvg() < POWERMNG_EMERGENCY_POWER_VOLT_MIN || wake_count == 1) 
     m_powerSaveMode = true;
-  else if (m_powerSaveMode && m_batteryVolt > POWERMNG_EMERGENCY_POWER_VOLT_MAX) 
+  else if (m_powerSaveMode && m_batteryVolt.getAvg() > POWERMNG_EMERGENCY_POWER_VOLT_MAX) 
     m_powerSaveMode = false;
 
   oled.clear();
@@ -169,18 +170,18 @@ void loop() {
 }
 
 void readBattery() {
-  int m_batteryVoltRAW = ads.readADC_SingleEnded(VADC_INPUT_BATTERY);
+  int batteryVoltRAW = ads.readADC_SingleEnded(VADC_INPUT_BATTERY);
   
-  m_batteryVolt = m_batteryVoltRAW * VADC_PERBIT * VBAT_MULTIPLIER;
+  m_batteryVolt.add( (float)batteryVoltRAW * VADC_PERBIT * VBAT_MULTIPLIER);
 }
 
 void readLightSensor() {
-  m_lightsensorRAW = ads.readADC_SingleEnded(VADC_INPUT_LIGHTSENSOR) ;
+  m_lightsensorRAW.add( ads.readADC_SingleEnded(VADC_INPUT_LIGHTSENSOR) );
 }
 
 void readTemp() {
-  m_interiorTempC = (float)dht.readTemperature();
-  m_interiorHumidityPERC = (float)dht.readHumidity();
+  m_interiorTempC.add( (float)dht.readTemperature() );
+  m_interiorHumidityPERC.add( (float)dht.readHumidity() );
 }
 
 
@@ -195,8 +196,8 @@ void httpRequest() {
   http.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
-  sprintf(payload, "s=%s&battv=%f&wc=%d&boxtemp=%.2f&boxhumidity=%.2f&light=%d", 
-      "TEST2", m_batteryVolt, wake_count,m_interiorTempC, m_interiorHumidityPERC, m_lightsensorRAW);
+  sprintf(payload, "s=%s&battv=%f&wc=%d&boxtemp=%.2f&boxhumidity=%.2f&light=%.2f&powersave=%d", 
+      "TEST2", m_batteryVolt.getAvg(), wake_count,m_interiorTempC.getAvg(), m_interiorHumidityPERC.getAvg(), m_lightsensorRAW.getAvg(), m_powerSaveMode ? 1 : 0 );
   
   int httpCode = http.POST(payload);
   

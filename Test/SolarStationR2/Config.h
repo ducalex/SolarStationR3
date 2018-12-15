@@ -6,7 +6,7 @@
 
 // Power management
 #define POWERMNG_EMERGENCY_POWER_VOLT_MIN 3.5d
-#define POWERMNG_EMERGENCY_POWER_VOLT_MAX 3.8d
+#define POWERMNG_EMERGENCY_POWER_VOLT_MAX 3.7d
 
 // Wifi
 const char* WIFI_SSID = "Maxou_TestIOT";
