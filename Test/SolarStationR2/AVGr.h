@@ -8,8 +8,9 @@ class AVGr
   public:
   AVGr(int maximum) 
   {
-    m_maximum = maximum;
     m_currentAvg = 0.0;
+    
+    m_maximum = maximum;
     m_count = 0;
   }
 
