@@ -18,10 +18,25 @@ namespace SolarStationServer.Viewer
 
             string baseAddress = "http://+:9999";
 
-            // Start OWIN host
-            using (WebApp.Start<Startup>(url: baseAddress))
+            try
             {
-                Console.ReadLine();
+                // Start OWIN host
+                using (WebApp.Start<Startup>(url: baseAddress))
+                {
+                    string line = null;
+                    while ((line = Console.ReadLine()) != null)
+                    {
+                        if (line == "q")
+                            break;
+                    }
+                }
+
+                Console.Out.WriteLine("Gracefully stop ...");
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.Error.WriteLine("Error: " + ex.Message);
             }
         }
     }
