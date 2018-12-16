@@ -17,7 +17,7 @@ const int   WIFI_CONNECTIONTIMEOUTMS = 10000; // in milliseconds
 // HTTP
 const int   HTTP_REQUEST_TIMEOUT_MS = 5*1000;
 
-const char* HTTP_UPDATE_URL = "http://192.168.5.214";
+const char* HTTP_UPDATE_URL = "http://192.168.5.214/Main/PostData";
 const int   HTTP_UPDATE_PORT = 9999;
 
 // Screen

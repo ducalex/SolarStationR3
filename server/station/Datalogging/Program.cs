@@ -12,7 +12,7 @@ namespace datalogging
     {
         static void Main(string[] args)
         {
-            string baseAddress = "http://+:80";
+            string baseAddress = "http://+:51248";
 
             // Start OWIN host
             using (WebApp.Start<Startup>(url: baseAddress))

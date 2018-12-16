@@ -8,3 +8,5 @@
 /server/station/Common/bin/Debug
 /server/station/Viewer/obj
 /server/station/Viewer/bin/Debug
+/server/station/packages
+/server/station/.vs
