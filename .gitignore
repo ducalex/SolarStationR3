@@ -2,3 +2,9 @@
 /Dataparser/packages
 /Dataparser/.vs
 /Dataparser/obj
+/server/station/Datalogging/bin/Debug
+/server/station/Datalogging/obj
+/server/station/Common/obj
+/server/station/Common/bin/Debug
+/server/station/Viewer/obj
+/server/station/Viewer/bin/Debug
