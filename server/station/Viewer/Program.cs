@@ -13,9 +13,6 @@ namespace SolarStationServer.Viewer
     {
         static void Main(string[] args)
         {
-            //MainHub h = new MainHub();
-            //h.getCurrentSession(out var a, out var b);
-
             string baseAddress = "http://+:9999";
 
             try

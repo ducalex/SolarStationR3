@@ -10,6 +10,7 @@ using Microsoft.AspNet.SignalR.Hubs;
 using MySql.Data.MySqlClient;
 using Newtonsoft.Json;
 using SolarStationServer.Common.DAL;
+using SolarStationServer.Viewer.Helpers;
 
 namespace SolarStationServer.Viewer.Hubs
 {
@@ -23,7 +24,18 @@ namespace SolarStationServer.Viewer.Hubs
             return new
             {
                 Datas = from data in m_mySQLDal.getAllSolarStationDatas()
-                        select data
+                        select new
+                        {
+                            Xvalue = FormatUtil.formatDateYMDHHMMText(data.datetime),
+                            data.datetime,
+
+                            data.batteryV,
+                            data.lightsensorRAW,
+
+                            data.boxtempC,
+                            data.boxhumidityPERC,
+                            data.powermode,
+                        }
             };
         }
     }
