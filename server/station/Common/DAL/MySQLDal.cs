@@ -11,9 +11,7 @@ namespace SolarStationServer.Common.DAL
     public class MySQLDal
     {
         public IEnumerable<SolarStationData> getAllSolarStationDatas()
-        {
-            return query<SolarStationData>("SELECT * FROM `data`");
-        }
+            => query<SolarStationData>("SELECT * FROM `data` ORDER BY datetime");
 
         /// <summary>
         /// Insert new session.
@@ -41,81 +39,6 @@ namespace SolarStationServer.Common.DAL
                 cmd => cmd.Parameters.AddWithValue("@id", newId))
                 .FirstOrDefault();
         }
-
-        //public HQCredential insertNewHQCredential(string user, string pass_encrypted)
-        //{
-        //    int newId = Convert.ToInt32(executeScalar(
-        //       " INSERT INTO hqcredential(user, pass_encrypted) " +
-        //       "    VALUES(@user, @pass_encrypted); " +
-        //       " SELECT LAST_INSERT_ID(); ",
-        //       cmd =>
-        //       {
-        //           cmd.Parameters.AddWithValue("@user", user);
-        //           cmd.Parameters.AddWithValue("@pass_encrypted", pass_encrypted);
-        //       }));
-
-        //    return getHQCredential(newId);
-        //}
-
-        ///// <summary>
-        ///// Get existing session.
-        ///// </summary>
-        ///// <param name="token"></param>
-        ///// <returns></returns>
-        //public Session getExistingSession(string token)
-        //{
-        //    return query<Session>(
-        //        "SELECT * FROM `session` WHERE authtoken = @token",
-        //        cmd => cmd.Parameters.AddWithValue("@token", token))
-        //        .FirstOrDefault();
-        //}
-
-        ///// <summary>
-        ///// Get identity by login.
-        ///// </summary>
-        ///// <param name="user"></param>
-        ///// <returns></returns>
-        //public HQCredential getIdentityHQCredential(string user)
-        //{
-        //    return query<HQCredential>(
-        //        "SELECT * FROM `hqcredential` WHERE user = @user",
-        //        cmd => cmd.Parameters.AddWithValue("@user", user))
-        //        .FirstOrDefault();
-        //}
-
-        //public HQCredential getHQCredential(int hqcredentialid)
-        //{
-        //    return query<HQCredential>(
-        //        "SELECT * FROM `hqcredential` WHERE id = @hqcredentialid",
-        //        cmd => cmd.Parameters.AddWithValue("@hqcredentialid", hqcredentialid))
-        //        .FirstOrDefault();
-        //}
-
-        //public HQData insertNewHQData(int hqcredentialid, DateTime date, string json)
-        //{
-        //    int newId = Convert.ToInt32(executeScalar(
-        //       " INSERT INTO hqdata(hqcredentialid, date, json) " +
-        //       "    VALUES(@hqcredentialid, @date, @json); " +
-        //       " SELECT LAST_INSERT_ID(); ",
-        //       cmd =>
-        //       {
-        //           cmd.Parameters.AddWithValue("@hqcredentialid", hqcredentialid);
-        //           cmd.Parameters.AddWithValue("@date", date);
-        //           cmd.Parameters.AddWithValue("@json", json);
-        //       }));
-
-        //    return query<HQData>(
-        //        "SELECT * FROM `hqdata` WHERE id = @hqdataid",
-        //        cmd => cmd.Parameters.AddWithValue("@hqdataid", newId))
-        //        .FirstOrDefault();
-        //}
-
-        //public IEnumerable<HQData> getAllHQDatas(int hqcredentialid)
-        //{
-        //    return query<HQData>(
-        //        "SELECT * FROM `hqdata` WHERE hqcredentialid = @hqcredentialid",
-        //        cmd => cmd.Parameters.AddWithValue("@hqcredentialid", hqcredentialid));
-        //}
 
         /// <summary>
         /// Query.

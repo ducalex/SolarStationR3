@@ -72,7 +72,7 @@ void loop() {
   
   // Do some useful task ...
   int measureCount = 
-    (m_powerSaveMode ? 120 : 60);
+    (m_powerSaveMode ? 300 : 120);
   
   if (m_firstStart)
     measureCount = 1; // We want to send a message immediately ...
@@ -91,7 +91,7 @@ void loop() {
     readLightSensor();
  
       // Display on screen ...
-    if ((millis() - lastOLEDUpdateMS > 5000 || lastOLEDUpdateMS == 0) && !m_powerSaveMode) {    
+    if ((millis() - lastOLEDUpdateMS > 5000 || lastOLEDUpdateMS == 0) && wake_count == 1) {    
 
       oled.setCursor(0, 0);
       oled.println("Potatoes industries");

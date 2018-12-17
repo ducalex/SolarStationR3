@@ -24,17 +24,24 @@ namespace SolarStationServer.Viewer.Hubs
             return new
             {
                 Datas = from data in m_mySQLDal.getAllSolarStationDatas()
+                        where data.datetime >= start.Date && data.datetime < end.Date.AddDays(1)
+                        group data by new
+                        {
+                            QuarterText = FormatUtil.formatDateYMDQuarter(data.datetime)
+                        }
+                        into g
                         select new
                         {
-                            Xvalue = FormatUtil.formatDateYMDHHMMText(data.datetime),
-                            data.datetime,
+                            Xvalue = g.Key.QuarterText,
 
-                            data.batteryV,
-                            data.lightsensorRAW,
+                            //data.datetime,
 
-                            data.boxtempC,
-                            data.boxhumidityPERC,
-                            data.powermode,
+                            batteryV = g.Average(d => d.batteryV),
+                            lightsensorRAW = g.Average(d => d.lightsensorRAW),
+
+                            boxtempC = g.Average(d => d.boxtempC),
+                            boxhumidityPERC = g.Average(d => d.boxhumidityPERC),
+                            powermode = g.Max(d => d.powermode),
                         }
             };
         }
