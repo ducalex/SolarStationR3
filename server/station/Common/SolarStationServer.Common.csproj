@@ -60,6 +60,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="DAL\StationStat.cs" />
     <Compile Include="DAL\MySQLDal.cs" />
     <Compile Include="DAL\SolarStationData.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

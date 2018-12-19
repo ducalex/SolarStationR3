@@ -40,6 +40,14 @@ namespace SolarStationServer.Common.DAL
                 .FirstOrDefault();
         }
 
+        public StationStat getVoltageStatOrDefault()
+        {
+            return query<StationStat>(
+                    @"SELECT COALESCE(max(batteryV), 0) AS ChargedVoltage
+                    FROM data
+                    Where lightsensorRAW < 200").FirstOrDefault() ?? new StationStat();
+        }
+
         /// <summary>
         /// Query.
         /// </summary>

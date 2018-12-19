@@ -1,7 +1,7 @@
 ﻿<!DOCTYPE html>
 <html>
 <head>
-    <title>Solar Station Date Viewer</title>
+    <title>Solar Station Data Viewer</title>
 	<link rel="stylesheet" href="./Content/bootstrap.min.css" />
 	<link rel="stylesheet" href="./Content/bootstrap-reboot.min.css" />
 	<link rel="stylesheet" href="./Content/bootstrap-datepicker3.min.css" />
@@ -74,6 +74,7 @@
 			<div class="chart-container" style="position: relative;">
 				<canvas id="canvasLightEnergy" style="background: white;"></canvas>
 				<canvas id="canvasBoxTempHumi" style="background: white;"></canvas>
+				<canvas id="canvas2Days" style="background: white;"></canvas>
 			</div>
 		</div>
 
@@ -128,8 +129,8 @@
             $scope.isAuthenticated = false;
 
 			// Canvas light/energy
-			var ctx = document.getElementById('canvasLightEnergy').getContext('2d');
-			window.myBar = new Chart.Line(ctx, {
+			var ctxLightEnergy = document.getElementById('canvasLightEnergy').getContext('2d');
+			window.myBar = new Chart.Line(ctxLightEnergy, {
 					type: 'line',
 					data: [],
 					options: {
@@ -161,7 +162,7 @@
 									stepValue: 1,
 									max: 3
 								}
-							}
+							},
 							]
 						},
 						hoverMode: 'index',
@@ -178,8 +179,8 @@
 				});
 
 							// Canvas light/energy
-			var ctx = document.getElementById('canvasBoxTempHumi').getContext('2d');
-			window.myBarLightEnergy = new Chart.Line(ctx, {
+			var ctxBoxTempHumi = document.getElementById('canvasBoxTempHumi').getContext('2d');
+			window.myBarLightEnergy = new Chart.Line(ctxBoxTempHumi, {
 					type: 'line',
 					data: [],
 					options: {
@@ -221,6 +222,44 @@
 					}
 				});
 
+							// Canvas light/energy
+			var ctx2Days = document.getElementById('canvas2Days').getContext('2d');
+			window.myBar2Days = new Chart.Line(ctx2Days, {
+					type: 'line',
+					data: [],
+					options: {
+						scales: {
+							yAxes: [
+							{
+								id: "y-axis-0",
+								name: 'y-axis-0',
+								type: 'linear',
+								position: 'left',
+								scalePositionLeft: true
+							},
+							{
+								name: 'y-axis-1',
+								id: "y-axis-1",
+								type: 'linear',
+								position: 'right',
+								scalePositionLeft: false,
+							},
+							]
+						},
+						hoverMode: 'index',
+						responsive: true,
+						aspectRatio: 3,
+						legend: {
+							position: 'top',
+						},
+						title: {
+							display: true,
+							text: 'Two days graphs'
+						}
+					}
+				});
+
+
 			$(function () {
 			//Set the hubs URL for the connection
 				$.connection.hub.url = "signalr";
@@ -231,8 +270,11 @@
 
 				// Create a function that the hub can call to broadcast messages.
 				//mainHub.client.addMessage = function (name, message) {
-
-				//};
+				mainHub.on("eventNewSensorData",
+					function() {
+						console.log("eventNewSensorData");
+						$scope.updateGraph();
+					});
 
 				 $scope.updateGraphBt = function() {
 					$scope.updateGraph();
@@ -240,6 +282,7 @@
 
 				$scope.updateGraph = function()
 				{
+					// Graph for date range
 					new Promise((resolve, reject) => {
 						mainHub.server.getStationData(dtStartDate, dtEndDate)
 							.done(data => resolve(data))
@@ -252,6 +295,7 @@
 
 						let values_light = data.Datas.map(dd => dd.lightsensorRAW);
 						let values_batteryV = data.Datas.map(dd => dd.batteryV);
+						let values_batteryChargedV = data.Datas.map(dd => dd.batteryChargedV);
 						let values_powermodes = data.Datas.map(dd => dd.powermode);
 
 						var barChartData = {
@@ -264,12 +308,19 @@
 								borderWidth: 2,
 								data: values_light
 							}, {
-								label: 'Battery voltage',
+								label: 'Battery v',
 								// backgroundColor: 'lightblue',
 								yAxisID: 'y-axis-1',
 								borderColor: 'blue',
 								borderWidth: 2,
 								data: values_batteryV
+							}, {
+								label: 'Battery v (charged)',
+								// backgroundColor: 'lightblue',
+								yAxisID: 'y-axis-1',
+								borderColor: 'purple',
+								borderWidth: 2,
+								data: values_batteryChargedV
 							}, {
 								label: 'Power mode',
 								// backgroundColor: 'lightblue',
@@ -321,6 +372,61 @@
 						window.myBarLightEnergy.data = barChartDataLightEnergy;
 						window.myBarLightEnergy.update();
 					});
+
+					// 2 days graph
+					mainHub.server.getStationData2Day()
+						.done(data =>
+						{
+							console.log("getStationData2Day", data);
+
+							let x_labels = data.Datas.map(dd => dd.XValue);
+
+							let valuesD0_batteryV = data.Datas.map(dd => dd.DataD0.batteryV);
+							let valuesD0_lightsensorRAW = data.Datas.map(dd => dd.DataD0.lightsensorRAW);
+
+							let valuesD1_batteryV = data.Datas.map(dd => dd.DataD1.batteryV);
+							let valuesD1_lightsensorRAW = data.Datas.map(dd => dd.DataD1.lightsensorRAW);
+
+							var barChartData2Days = {
+								labels: x_labels,
+								datasets: [{
+									label: 'Light (' + data.DayD0Text + ")",
+									// backgroundColor: 'red',
+									yAxisID: 'y-axis-0',
+									borderColor: 'lightgreen',
+									borderWidth: 2,
+									data: valuesD0_lightsensorRAW
+								},
+								{
+									label: 'Light (' + data.DayD1Text + ")",
+									// backgroundColor: 'red',
+									yAxisID: 'y-axis-0',
+									borderColor: 'green',
+									borderWidth: 2,
+									data: valuesD1_lightsensorRAW
+								},
+								{
+									label: 'Batt (v) (' + data.DayD0Text + ")",
+									// backgroundColor: 'red',
+									yAxisID: 'y-axis-1',
+									borderColor: 'lightblue',
+									borderWidth: 2,
+									data: valuesD0_batteryV
+								},
+								{
+									label: 'Batt (v) (' + data.DayD1Text + ")",
+									// backgroundColor: 'red',
+									yAxisID: 'y-axis-1',
+									borderColor: 'blue',
+									borderWidth: 2,
+									data: valuesD1_batteryV
+								}]
+
+							};
+
+							window.myBar2Days.data = barChartData2Days;
+							window.myBar2Days.update();
+						});
 				};
 
 				// Start the connection.
