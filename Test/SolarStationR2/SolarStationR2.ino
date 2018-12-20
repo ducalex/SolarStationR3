@@ -15,6 +15,8 @@
 #include <SSD1306Ascii.h>
 #include <SSD1306AsciiWire.h>
 
+#include <Adafruit_BMP085.h>
+
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <DHT.h>;
@@ -30,12 +32,17 @@ RTC_DATA_ATTR bool m_powerSaveMode = false;
 DHT dht(DHTPIN, DHTTYPE);
 Adafruit_ADS1115 ads; 
 SSD1306AsciiWire oled;
+Adafruit_BMP085 bmp;
 
 // Global sensor values
 RTC_DATA_ATTR AVGr m_batteryVolt(MEASUREMENTAVGCOUNT);
 RTC_DATA_ATTR AVGr m_lightsensorRAW(MEASUREMENTAVGCOUNT);
 RTC_DATA_ATTR AVGr m_interiorTempC(MEASUREMENTAVGCOUNT);
 RTC_DATA_ATTR AVGr m_interiorHumidityPERC(MEASUREMENTAVGCOUNT);
+
+
+RTC_DATA_ATTR AVGr m_exteriorTemp(6);
+RTC_DATA_ATTR AVGr m_exteriorPressure(6);
 
 
 void setup() {
@@ -52,6 +59,8 @@ void setup() {
 
   ads.begin();
   ads.setGain(VADC_SENSORGAIN);
+
+  bmp.begin();
   
   pinMode(LED_BUILTIN, OUTPUT); 
   pinMode(A0, INPUT);
@@ -62,7 +71,10 @@ void setup() {
 void loop() {
   unsigned long startMS = millis();
   unsigned long lastOLEDUpdateMS = 0;
+  unsigned long lastBMPUpdateMS = 0;
   wake_count++;
+
+  bool isDebug = (wake_count < 5);
 
   Serial.println("OLED init...");
   
@@ -72,7 +84,7 @@ void loop() {
   
   // Do some useful task ...
   int measureCount = 
-    (m_powerSaveMode ? 300 : 120);
+    (m_powerSaveMode ? 300 : (isDebug ? 30 : 120));
   
   if (m_firstStart)
     measureCount = 1; // We want to send a message immediately ...
@@ -89,24 +101,31 @@ void loop() {
     
     readBattery();
     readLightSensor();
- 
-      // Display on screen ...
-    if ((millis() - lastOLEDUpdateMS > 5000 || lastOLEDUpdateMS == 0) && wake_count == 1) {    
 
+    if (lastBMPUpdateMS == 0 || (millis() - lastBMPUpdateMS) > 10000) {
+      readBMPData();
+
+      lastBMPUpdateMS = millis();
+    }
+    
+      // Display on screen ...
+    if ((lastOLEDUpdateMS == 0 || (millis() - lastOLEDUpdateMS) > 5000) && isDebug ) {    //
+      
       oled.setCursor(0, 0);
       oled.println("Potatoes industries");
       oled.println("values:");
       char buffer[150];
       sprintf(buffer, 
-        "battery: %.2f v\ntemp: %.2f C\nhumidity: %.2f %%\nlight: %.2f /bits\nwakeup: %d",
+        "battery: %.2f v\ntemp: %.2f C / %.2f C\nhumidity: %.2f %%\nlight: %.2f /bits\nwakeup: %d",
         m_batteryVolt.getAvg(),
         m_interiorTempC.getAvg(),
+        m_exteriorTemp.getAvg(),
         m_interiorHumidityPERC.getAvg(),
         m_lightsensorRAW.getAvg(),
         wake_count);
       oled.print(buffer);
       
-      delay(25); // This delays seems to resolve a lot of problem related to OLED and ADC communication.
+      delay(10); // This delays seems to resolve a lot of problem related to OLED and ADC communication.
       
       lastOLEDUpdateMS = millis();
     }
@@ -170,6 +189,12 @@ void loop() {
   esp_deep_sleep_start(); // Good night
 }
 
+void readBMPData() {
+    m_exteriorTemp.add(bmp.readTemperature());
+    m_exteriorPressure.add((float)bmp.readPressure());    
+    delay(10); // This delays seems to resolve a lot of problem related to OLED and ADC communication.
+}
+
 void readBattery() { 
   int batteryVoltRAW = ads.readADC_SingleEnded(VADC_INPUT_BATTERY);
   float finalVoltage = (float)batteryVoltRAW * VADC_PERBIT * VBAT_MULTIPLIER;
@@ -202,8 +227,8 @@ void httpRequest() {
   http.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
-  sprintf(payload, "s=%s&battv=%f&wc=%d&boxtemp=%.2f&boxhumidity=%.2f&light=%.2f&powersave=%d", 
-      "TEST2", m_batteryVolt.getAvg(), wake_count,m_interiorTempC.getAvg(), m_interiorHumidityPERC.getAvg(), m_lightsensorRAW.getAvg(), m_powerSaveMode ? 1 : 0 );
+  sprintf(payload, "s=%s&battv=%f&wc=%d&boxtemp=%.2f&boxhumidity=%.2f&light=%.2f&powersave=%d&exttempc=%.2f&pressurepa=%.2f", 
+      "TEST2", m_batteryVolt.getAvg(), wake_count,m_interiorTempC.getAvg(), m_interiorHumidityPERC.getAvg(), m_lightsensorRAW.getAvg(), m_powerSaveMode ? 1 : 0, m_exteriorTemp.getAvg(), m_exteriorPressure.getAvg() );
   
   int httpCode = http.POST(payload);
   

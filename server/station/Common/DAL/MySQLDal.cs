@@ -21,8 +21,8 @@ namespace SolarStationServer.Common.DAL
         {
             int newId = Convert.ToInt32(executeScalar(
                 " INSERT INTO `data` " +
-                "   (datetime, lightsensorRAW, batteryV, boxtempC, boxhumidityPERC, powermode) " +
-                " VALUES(@datetime, @lightsensorRAW, @batteryV, @boxtempC, @boxhumidityPERC, @powermode); " +
+                "   (datetime, lightsensorRAW, batteryV, boxtempC, boxhumidityPERC, powermode, exttempC, extpressurePA) " +
+                " VALUES(@datetime, @lightsensorRAW, @batteryV, @boxtempC, @boxhumidityPERC, @powermode, @exttempC, @extpressurePA); " +
                 " SELECT LAST_INSERT_ID(); ",
                 cmd =>
                 {
@@ -31,6 +31,8 @@ namespace SolarStationServer.Common.DAL
                     cmd.Parameters.AddWithValue("@batteryV", solarStationData.batteryV);
                     cmd.Parameters.AddWithValue("@boxtempC", solarStationData.boxtempC);
                     cmd.Parameters.AddWithValue("@boxhumidityPERC", solarStationData.boxhumidityPERC);
+                    cmd.Parameters.AddWithValue("@exttempC", solarStationData.exttempC);
+                    cmd.Parameters.AddWithValue("@extpressurePA", solarStationData.extpressurePA);
                     cmd.Parameters.AddWithValue("@powermode", solarStationData.powermode);
                 }));
 

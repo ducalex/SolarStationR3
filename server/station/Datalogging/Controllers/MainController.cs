@@ -25,7 +25,9 @@ namespace SolarStationServer.Datalogging.Controllers
                 lightsensorRAW = (float?)solarDataInput.light,
                 powermode = solarDataInput.powersave,
                 boxhumidityPERC = (float?)solarDataInput.boxhumidity,
-                boxtempC = (float?)solarDataInput.boxtemp
+                boxtempC = (float?)solarDataInput.boxtemp,
+                exttempC = (float?)solarDataInput.exttempC,
+                extpressurePA = (float?)solarDataInput.extpressurePA,
             });
             return Ok(new { Status = "OK" });
         }

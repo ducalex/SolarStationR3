@@ -20,6 +20,10 @@ namespace SolarStationServer.Common.DAL
 
         public float? boxhumidityPERC { get; set; }
 
+        public float? exttempC { get; set; }
+
+        public float? extpressurePA { get; set; }
+
         public int powermode { get; set; }
     }
 }

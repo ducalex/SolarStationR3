@@ -54,6 +54,10 @@ namespace SolarStationServer.Viewer.Hubs
 
                             boxtempC = g.Average(d => d.boxtempC),
                             boxhumidityPERC = g.Average(d => d.boxhumidityPERC),
+
+                            exttempC = g.Average(d => d.exttempC),
+                            extpressureKPA = g.Average(d => d.extpressurePA) / 1000.0d,
+
                             powermode = g.Max(d => d.powermode),
                         }).ToArray()
             }; ;
@@ -84,8 +88,19 @@ namespace SolarStationServer.Viewer.Hubs
                     {
                         XValue = FormatUtil.formatQuarterHour(hq),
 
-                        DataD0 = new { batteryV = allDataD0s.Where(p => p.batteryV.HasValue).Average(p => p.batteryV), lightsensorRAW = allDataD0s.Where(p => p.lightsensorRAW.HasValue).Average(p => p.lightsensorRAW) },
-                        DataD1 = new { batteryV = allDataD1s.Where(p => p.batteryV.HasValue).Average(p => p.batteryV), lightsensorRAW = allDataD1s.Where(p => p.lightsensorRAW.HasValue).Average(p => p.lightsensorRAW) },
+                        DataD0 = new
+                        {
+                            batteryV = allDataD0s.Where(p => p.batteryV.HasValue).Average(p => p.batteryV),
+                            lightsensorRAW = allDataD0s.Where(p => p.lightsensorRAW.HasValue).Average(p => p.lightsensorRAW),
+                            exttempC = allDataD0s.Where(p => p.lightsensorRAW.HasValue).Average(p => p.exttempC),
+                            extpressureKPA = allDataD0s.Where(p => p.lightsensorRAW.HasValue).Average(p => p.extpressurePA) / 1000.0d,
+                        },
+                        DataD1 = new {
+                            batteryV = allDataD1s.Where(p => p.batteryV.HasValue).Average(p => p.batteryV),
+                            lightsensorRAW = allDataD1s.Where(p => p.lightsensorRAW.HasValue).Average(p => p.lightsensorRAW),
+                            exttempC = allDataD1s.Where(p => p.lightsensorRAW.HasValue).Average(p => p.exttempC),
+                            extpressureKPA = allDataD1s.Where(p => p.lightsensorRAW.HasValue).Average(p => p.extpressurePA) / 1000.0d,
+                        },
                      }).ToArray()
                 //Datas = from data in m_mySQLDal.getAllSolarStationDatas()
                 //        orderby data.datetime

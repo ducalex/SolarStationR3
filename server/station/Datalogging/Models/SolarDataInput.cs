@@ -20,6 +20,10 @@ namespace SolarStationServer.Datalogging.Controllers
 
         public double? boxhumidity { get; set; }
 
+        public double? exttempC { get; set; }
+
+        public double? extpressurePA { get; set; }
+
         public double? light { get; set; }
 
         public int powersave { get; set; }
