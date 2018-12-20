@@ -27,7 +27,7 @@ namespace SolarStationServer.Datalogging.Controllers
                 boxhumidityPERC = (float?)solarDataInput.boxhumidity,
                 boxtempC = (float?)solarDataInput.boxtemp,
                 exttempC = (float?)solarDataInput.exttempC,
-                extpressurePA = (float?)solarDataInput.extpressurePA,
+                extpressurePA = (float?)solarDataInput.pressurepa,
             });
             return Ok(new { Status = "OK" });
         }

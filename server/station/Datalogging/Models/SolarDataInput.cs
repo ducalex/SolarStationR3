@@ -22,7 +22,7 @@ namespace SolarStationServer.Datalogging.Controllers
 
         public double? exttempC { get; set; }
 
-        public double? extpressurePA { get; set; }
+        public double? pressurepa { get; set; }
 
         public double? light { get; set; }
 

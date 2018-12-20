@@ -206,6 +206,13 @@
 								type: 'linear',
 								position: 'right',
 								scalePositionLeft: false,
+							},
+							{
+								name: 'y-axis-3',
+								id: "y-axis-3",
+								type: 'linear',
+								position: 'right',
+								scalePositionLeft: false,
 							}
 							]
 						},
@@ -340,7 +347,9 @@
 						  Light Energy data
 						   ======*/
 						let values_boxtempCs = data.Datas.map(dd => dd.boxtempC);
+						let values_exttempCs = data.Datas.map(dd => dd.exttempC);
 						let values_boxhumidityPERCs = data.Datas.map(dd => dd.boxhumidityPERC);
+						let values_extpressureKPAs = data.Datas.map(dd => dd.extpressureKPA);
 
 						var barChartDataLightEnergy = {
 							labels: curryear_labels ,
@@ -352,12 +361,19 @@
 								borderWidth: 2,
 								data: values_light
 							}, {
-								label: 'Temperature (C)',
+								label: 'Temp box (C)',
 								// backgroundColor: 'lightblue',
 								yAxisID: 'y-axis-1',
 								borderColor: 'red',
 								borderWidth: 2,
 								data: values_boxtempCs
+							}, {
+								label: 'Temp ext. (C)',
+								// backgroundColor: 'lightblue',
+								yAxisID: 'y-axis-1',
+								borderColor: 'brown',
+								borderWidth: 2,
+								data: values_exttempCs
 							}, {
 								label: 'Humidity (%)',
 								// backgroundColor: 'lightblue',
@@ -365,6 +381,13 @@
 								borderColor: 'purple',
 								borderWidth: 2,
 								data: values_boxhumidityPERCs
+							}, {
+								label: 'Pressure (kPA)',
+								// backgroundColor: 'lightblue',
+								yAxisID: 'y-axis-3',
+								borderColor: 'fuchsia',
+								borderWidth: 2,
+								data: values_extpressureKPAs
 							}]
 
 						};
