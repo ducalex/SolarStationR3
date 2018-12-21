@@ -128,6 +128,8 @@
          mainApp.controller('mainController', function($scope) {
             $scope.isAuthenticated = false;
 
+			//let canvasLightEnergy_axisBattery = null;
+
 			// Canvas light/energy
 			var ctxLightEnergy = document.getElementById('canvasLightEnergy').getContext('2d');
 			window.myBar = new Chart.Line(ctxLightEnergy, {
@@ -149,6 +151,10 @@
 								type: 'linear',
 								position: 'right',
 								scalePositionLeft: false,
+								ticks: {
+									min: 0,
+									max: 5
+								}
 							},
 							{
 								name: 'y-axis-2',
@@ -289,167 +295,189 @@
 
 				$scope.updateGraph = function()
 				{
-					// Graph for date range
-					new Promise((resolve, reject) => {
-						mainHub.server.getStationData(dtStartDate, dtEndDate)
-							.done(data => resolve(data))
-							.fail(reject);
-					}).then(data =>
-					{
-						console.log("data", data);
-
-						let curryear_labels = data.Datas.map(dd => dd.Xvalue);
-
-						let values_light = data.Datas.map(dd => dd.lightsensorRAW);
-						let values_batteryV = data.Datas.map(dd => dd.batteryV);
-						let values_batteryChargedV = data.Datas.map(dd => dd.batteryChargedV);
-						let values_powermodes = data.Datas.map(dd => dd.powermode);
-
-						var barChartData = {
-							labels: curryear_labels ,
-							datasets: [{
-								label: 'Light',
-								// backgroundColor: 'red',
-								yAxisID: 'y-axis-0',
-								borderColor: '#E8AC41',
-								borderWidth: 2,
-								data: values_light
-							}, {
-								label: 'Battery v',
-								// backgroundColor: 'lightblue',
-								yAxisID: 'y-axis-1',
-								borderColor: 'blue',
-								borderWidth: 2,
-								data: values_batteryV
-							}, {
-								label: 'Battery v (charged)',
-								// backgroundColor: 'lightblue',
-								yAxisID: 'y-axis-1',
-								borderColor: 'purple',
-								borderWidth: 2,
-								data: values_batteryChargedV
-							}, {
-								label: 'Power mode',
-								// backgroundColor: 'lightblue',
-								yAxisID: 'y-axis-2',
-								borderColor: 'green',
-								borderWidth: 2,
-								data: values_powermodes
-							}]
-
-						};
-
-						//canvasBoxTempHumi
-						window.myBar.data = barChartData;
-						window.myBar.update();
-
-						/* ======
-						  Light Energy data
-						   ======*/
-						let values_boxtempCs = data.Datas.map(dd => dd.boxtempC);
-						let values_exttempCs = data.Datas.map(dd => dd.exttempC);
-						let values_boxhumidityPERCs = data.Datas.map(dd => dd.boxhumidityPERC);
-						let values_extpressureKPAs = data.Datas.map(dd => dd.extpressureKPA);
-
-						var barChartDataLightEnergy = {
-							labels: curryear_labels ,
-							datasets: [{
-								label: 'Light',
-								// backgroundColor: 'red',
-								yAxisID: 'y-axis-0',
-								borderColor: '#E8AC41',
-								borderWidth: 2,
-								data: values_light
-							}, {
-								label: 'Temp box (C)',
-								// backgroundColor: 'lightblue',
-								yAxisID: 'y-axis-1',
-								borderColor: 'red',
-								borderWidth: 2,
-								data: values_boxtempCs
-							}, {
-								label: 'Temp ext. (C)',
-								// backgroundColor: 'lightblue',
-								yAxisID: 'y-axis-1',
-								borderColor: 'brown',
-								borderWidth: 2,
-								data: values_exttempCs
-							}, {
-								label: 'Humidity (%)',
-								// backgroundColor: 'lightblue',
-								yAxisID: 'y-axis-2',
-								borderColor: 'purple',
-								borderWidth: 2,
-								data: values_boxhumidityPERCs
-							}, {
-								label: 'Pressure (kPA)',
-								// backgroundColor: 'lightblue',
-								yAxisID: 'y-axis-3',
-								borderColor: 'fuchsia',
-								borderWidth: 2,
-								data: values_extpressureKPAs
-							}]
-
-						};
-
-						window.myBarLightEnergy.data = barChartDataLightEnergy;
-						window.myBarLightEnergy.update();
-					});
-
-					// 2 days graph
-					mainHub.server.getStationData2Day()
-						.done(data =>
+					// canvasLightEnergy_axisBattery
+					mainHub.server.getStationStat()
+						.done(stationStatData =>
 						{
-							console.log("getStationData2Day", data);
+							console.log("getStationStat", stationStatData, myBar);
 
-							let x_labels = data.Datas.map(dd => dd.XValue);
+							// ticks
+							// Energy chart
+							myBar.chart.options.scales.yAxes[1].ticks.min = stationStatData.BatteryMinV;
+							myBar.chart.options.scales.yAxes[1].ticks.max = stationStatData.BatteryMaxV;
 
-							let valuesD0_batteryV = data.Datas.map(dd => dd.DataD0.batteryV);
-							let valuesD0_lightsensorRAW = data.Datas.map(dd => dd.DataD0.lightsensorRAW);
+							myBar.chart.options.scales.yAxes[0].ticks.min = stationStatData.LightMinRAW;
+							myBar.chart.options.scales.yAxes[0].ticks.max = stationStatData.LightMaxRAW;
 
-							let valuesD1_batteryV = data.Datas.map(dd => dd.DataD1.batteryV);
-							let valuesD1_lightsensorRAW = data.Datas.map(dd => dd.DataD1.lightsensorRAW);
+							// Environmental data chart
+							myBarLightEnergy.chart.options.scales.yAxes[0].ticks.min = stationStatData.LightMinRAW;
+							myBarLightEnergy.chart.options.scales.yAxes[0].ticks.max = stationStatData.LightMaxRAW;
 
-							var barChartData2Days = {
-								labels: x_labels,
-								datasets: [{
-									label: 'Light (' + data.DayD0Text + ")",
-									// backgroundColor: 'red',
-									yAxisID: 'y-axis-0',
-									borderColor: 'lightgreen',
-									borderWidth: 2,
-									data: valuesD0_lightsensorRAW
-								},
+							myBarLightEnergy.chart.options.scales.yAxes[1].ticks.min = stationStatData.ExternalTempMinC;
+							myBarLightEnergy.chart.options.scales.yAxes[1].ticks.max = stationStatData.BoxTempMaxC;
+
+							myBarLightEnergy.chart.options.scales.yAxes[2].ticks.min = stationStatData.BoxHumidityMinPERC;
+							myBarLightEnergy.chart.options.scales.yAxes[2].ticks.max = stationStatData.BoxHumidityMaxPERC;
+
+							myBarLightEnergy.chart.options.scales.yAxes[3].ticks.min = stationStatData.ExternalPressureMinPa / 1000;
+							myBarLightEnergy.chart.options.scales.yAxes[3].ticks.max = stationStatData.ExternalPressureMaxPa / 1000;
+
+							// Graph for date range
+							new Promise((resolve, reject) => {
+								mainHub.server.getStationData(dtStartDate, dtEndDate)
+									.done(data => resolve(data))
+									.fail(reject);
+							}).then(data =>
+							{
+								console.log("data", data);
+
+								let curryear_labels = data.Datas.map(dd => dd.Xvalue);
+
+								let values_light = data.Datas.map(dd => dd.lightsensorRAW);
+								let values_batteryV = data.Datas.map(dd => dd.batteryV);
+								let values_powermodes = data.Datas.map(dd => dd.powermode);
+
+								var barChartData = {
+									labels: curryear_labels ,
+									datasets: [{
+										label: 'Light',
+										// backgroundColor: 'red',
+										yAxisID: 'y-axis-0',
+										borderColor: '#E8AC41',
+										borderWidth: 2,
+										data: values_light
+									}, {
+										label: 'Battery v',
+										// backgroundColor: 'lightblue',
+										yAxisID: 'y-axis-1',
+										borderColor: 'blue',
+										borderWidth: 2,
+										data: values_batteryV
+									}, {
+										label: 'Power mode',
+										// backgroundColor: 'lightblue',
+										yAxisID: 'y-axis-2',
+										borderColor: 'green',
+										borderWidth: 2,
+										data: values_powermodes
+									}]
+
+								};
+
+								//canvasBoxTempHumi
+								window.myBar.data = barChartData;
+								window.myBar.update();
+
+								/* ======
+								  Light Energy data
+								   ======*/
+								let values_boxtempCs = data.Datas.map(dd => dd.boxtempC);
+								let values_exttempCs = data.Datas.map(dd => dd.exttempC);
+								let values_boxhumidityPERCs = data.Datas.map(dd => dd.boxhumidityPERC);
+								let values_extpressureKPAs = data.Datas.map(dd => dd.extpressureKPA);
+
+								var barChartDataLightEnergy = {
+									labels: curryear_labels ,
+									datasets: [{
+										label: 'Light',
+										// backgroundColor: 'red',
+										yAxisID: 'y-axis-0',
+										borderColor: '#E8AC41',
+										borderWidth: 2,
+										data: values_light
+									}, {
+										label: 'Temp box (C)',
+										// backgroundColor: 'lightblue',
+										yAxisID: 'y-axis-1',
+										borderColor: 'red',
+										borderWidth: 2,
+										data: values_boxtempCs
+									}, {
+										label: 'Temp ext. (C)',
+										// backgroundColor: 'lightblue',
+										yAxisID: 'y-axis-1',
+										borderColor: 'brown',
+										borderWidth: 2,
+										data: values_exttempCs
+									}, {
+										label: 'Humidity (%)',
+										// backgroundColor: 'lightblue',
+										yAxisID: 'y-axis-2',
+										borderColor: 'purple',
+										borderWidth: 2,
+										data: values_boxhumidityPERCs
+									}, {
+										label: 'Pressure (kPA)',
+										// backgroundColor: 'lightblue',
+										yAxisID: 'y-axis-3',
+										borderColor: 'fuchsia',
+										borderWidth: 2,
+										data: values_extpressureKPAs
+									}]
+
+								};
+
+								window.myBarLightEnergy.data = barChartDataLightEnergy;
+								window.myBarLightEnergy.update();
+							});
+
+							// 2 days graph
+							mainHub.server.getStationData2Day()
+								.done(data =>
 								{
-									label: 'Light (' + data.DayD1Text + ")",
-									// backgroundColor: 'red',
-									yAxisID: 'y-axis-0',
-									borderColor: 'green',
-									borderWidth: 2,
-									data: valuesD1_lightsensorRAW
-								},
-								{
-									label: 'Batt (v) (' + data.DayD0Text + ")",
-									// backgroundColor: 'red',
-									yAxisID: 'y-axis-1',
-									borderColor: 'lightblue',
-									borderWidth: 2,
-									data: valuesD0_batteryV
-								},
-								{
-									label: 'Batt (v) (' + data.DayD1Text + ")",
-									// backgroundColor: 'red',
-									yAxisID: 'y-axis-1',
-									borderColor: 'blue',
-									borderWidth: 2,
-									data: valuesD1_batteryV
-								}]
+									console.log("getStationData2Day", data);
 
-							};
+									let x_labels = data.Datas.map(dd => dd.XValue);
 
-							window.myBar2Days.data = barChartData2Days;
-							window.myBar2Days.update();
+									let valuesD0_batteryV = data.Datas.map(dd => dd.DataD0.batteryV);
+									let valuesD0_lightsensorRAW = data.Datas.map(dd => dd.DataD0.lightsensorRAW);
+
+									let valuesD1_batteryV = data.Datas.map(dd => dd.DataD1.batteryV);
+									let valuesD1_lightsensorRAW = data.Datas.map(dd => dd.DataD1.lightsensorRAW);
+
+									var barChartData2Days = {
+										labels: x_labels,
+										datasets: [{
+											label: 'Light (' + data.DayD0Text + ")",
+											// backgroundColor: 'red',
+											yAxisID: 'y-axis-0',
+											borderColor: 'lightgreen',
+											borderWidth: 2,
+											data: valuesD0_lightsensorRAW
+										},
+										{
+											label: 'Light (' + data.DayD1Text + ")",
+											// backgroundColor: 'red',
+											yAxisID: 'y-axis-0',
+											borderColor: 'green',
+											borderWidth: 2,
+											data: valuesD1_lightsensorRAW
+										},
+										{
+											label: 'Batt (v) (' + data.DayD0Text + ")",
+											// backgroundColor: 'red',
+											yAxisID: 'y-axis-1',
+											borderColor: 'lightblue',
+											borderWidth: 2,
+											data: valuesD0_batteryV
+										},
+										{
+											label: 'Batt (v) (' + data.DayD1Text + ")",
+											// backgroundColor: 'red',
+											yAxisID: 'y-axis-1',
+											borderColor: 'blue',
+											borderWidth: 2,
+											data: valuesD1_batteryV
+										}]
+
+									};
+
+									window.myBar2Days.data = barChartData2Days;
+									window.myBar2Days.update();
+								});
+
 						});
+
 				};
 
 				// Start the connection.

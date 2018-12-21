@@ -33,6 +33,9 @@ const int   HTTP_UPDATE_PORT = 9999;
 #define VADC_INPUT_LIGHTSENSOR 1
 #define VADC_INPUT_BATTERY 3
 
+// BMP085
+#define BMPTEMPC_OFFSET -2.5d
+
 // Measurement
 #define MEASUREMENTAVGCOUNT 60
 

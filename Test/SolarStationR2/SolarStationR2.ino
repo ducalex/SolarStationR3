@@ -37,12 +37,12 @@ Adafruit_BMP085 bmp;
 // Global sensor values
 RTC_DATA_ATTR AVGr m_batteryVolt(MEASUREMENTAVGCOUNT);
 RTC_DATA_ATTR AVGr m_lightsensorRAW(MEASUREMENTAVGCOUNT);
-RTC_DATA_ATTR AVGr m_interiorTempC(MEASUREMENTAVGCOUNT);
-RTC_DATA_ATTR AVGr m_interiorHumidityPERC(MEASUREMENTAVGCOUNT);
 
 
-RTC_DATA_ATTR AVGr m_exteriorTemp(6);
-RTC_DATA_ATTR AVGr m_exteriorPressure(6);
+RTC_DATA_ATTR AVGr m_exteriorTemp(12);
+RTC_DATA_ATTR AVGr m_exteriorPressure(12);
+RTC_DATA_ATTR AVGr m_interiorTempC(12);
+RTC_DATA_ATTR AVGr m_interiorHumidityPERC(12);
 
 
 void setup() {
@@ -91,6 +91,7 @@ void loop() {
 
   m_firstStart = false;
 
+  readBMPData();
   readTemp();
   
   while(measureCount--) {
@@ -102,9 +103,11 @@ void loop() {
     readBattery();
     readLightSensor();
 
+    /* Slow to measure ... */
     if (lastBMPUpdateMS == 0 || (millis() - lastBMPUpdateMS) > 10000) {
       readBMPData();
-
+      readTemp();
+      
       lastBMPUpdateMS = millis();
     }
     
@@ -190,7 +193,7 @@ void loop() {
 }
 
 void readBMPData() {
-    m_exteriorTemp.add(bmp.readTemperature());
+    m_exteriorTemp.add(bmp.readTemperature() + BMPTEMPC_OFFSET);
     m_exteriorPressure.add((float)bmp.readPressure());    
     delay(10); // This delays seems to resolve a lot of problem related to OLED and ADC communication.
 }

@@ -45,9 +45,21 @@ namespace SolarStationServer.Common.DAL
         public StationStat getVoltageStatOrDefault()
         {
             return query<StationStat>(
-                    @"SELECT COALESCE(max(batteryV), 0) AS ChargedVoltage
-                    FROM data
-                    Where lightsensorRAW < 200").FirstOrDefault() ?? new StationStat();
+                    @"SELECT 
+	                    (SELECT COALESCE(max(batteryV), 0) FROM data Where lightsensorRAW < 200) AS ChargedVoltage,
+	                    MIN(`exttempC`) AS ExternalTempMinC,
+	                    MAX(`exttempC`) AS ExternalTempMaxC,
+	                    MIN(`extpressurePA`) AS ExternalPressureMinPa,
+	                    MAX(`extpressurePA`) AS ExternalPressureMaxPa,
+                        MIN(`batteryV`) AS BatteryMinV,
+                        MAX(`batteryV`) AS BatteryMaxV,
+                        MIN(`lightsensorRAW`) AS LightMinRAW,
+                        MAX(`lightsensorRAW`) AS LightMaxRAW,
+                        MIN(`boxhumidityPERC`) AS BoxHumidityMinPERC,
+                        MAX(`boxhumidityPERC`) AS BoxHumidityMaxPERC,
+                        MIN(`boxtempC`) AS BoxTempMinC,
+                        MAX(`boxtempC`) AS BoxTempMaxC
+                    FROM data").FirstOrDefault() ?? new StationStat();
         }
 
         /// <summary>

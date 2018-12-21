@@ -19,18 +19,15 @@ namespace SolarStationServer.Viewer.Hubs
     {
         MySQLDal m_mySQLDal = new MySQLDal();
 
-        //public dynamic getStationStat()
-        //{
-        //    return new
-        //    {
-        //        ChargedVoltage = m_mySQLDal.getVoltageStatOrDefault().ChargedVoltage
-        //    };
-        //}
-
-        public dynamic getStationData(DateTime startUTC, DateTime endUTC)
+        public dynamic getStationStat()
         {
             StationStat ss = m_mySQLDal.getVoltageStatOrDefault();
 
+            return ss;
+        }
+
+        public dynamic getStationData(DateTime startUTC, DateTime endUTC)
+        {
             dynamic ret = new
             {
                 Datas = (from data in m_mySQLDal.getAllSolarStationDatas()
@@ -48,7 +45,6 @@ namespace SolarStationServer.Viewer.Hubs
                             //data.datetime,
 
                             batteryV = g.Average(d => d.batteryV),
-                            batteryChargedV = ss.ChargedVoltage,
 
                             lightsensorRAW = g.Average(d => d.lightsensorRAW),
 
