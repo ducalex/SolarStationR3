@@ -17,6 +17,8 @@ namespace SolarStationServer.Viewer
 
             try
             {
+                Console.WriteLine($"SolarStation Server Viewer is running (address: '{baseAddress}') ...");
+
                 // Start OWIN host
                 using (WebApp.Start<Startup>(url: baseAddress))
                 {

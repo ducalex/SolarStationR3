@@ -13,6 +13,16 @@ namespace SolarStationServer.Common.DAL
         public IEnumerable<SolarStationData> getAllSolarStationDatas()
             => query<SolarStationData>("SELECT * FROM `data` ORDER BY datetime");
 
+        public IEnumerable<SolarStationData> getAllSolarStationDatas(DateTime startDt, DateTime endDt)
+            => query<SolarStationData>(
+                " SELECT * FROM `data` " +
+                " WHERE `datetime` BETWEEN @startdate AND @enddate " +
+                " ORDER BY datetime",
+                cmd =>
+                {
+                    cmd.Parameters.AddWithValue("@startdate", startDt);
+                    cmd.Parameters.AddWithValue("@enddate", endDt);
+                });
         /// <summary>
         /// Insert new session.
         /// </summary>

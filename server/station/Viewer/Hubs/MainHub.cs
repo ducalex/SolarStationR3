@@ -28,10 +28,13 @@ namespace SolarStationServer.Viewer.Hubs
 
         public dynamic getStationData(DateTime startUTC, DateTime endUTC)
         {
+            DateTime dateD0 = startUTC.ToLocalTime().Date;
+            DateTime dateD1 = endUTC.ToLocalTime().Date.AddDays(1);
+
             dynamic ret = new
             {
-                Datas = (from data in m_mySQLDal.getAllSolarStationDatas()
-                        where data.datetime >= startUTC.ToLocalTime().Date && data.datetime < endUTC.ToLocalTime().Date.AddDays(1)
+                Datas = (from data in m_mySQLDal.getAllSolarStationDatas(dateD0, dateD1)
+                        //where data.datetime >= startUTC.ToLocalTime().Date && data.datetime < endUTC.ToLocalTime().Date.AddDays(1)
                         orderby data.datetime
                         group data by new
                         {
@@ -66,9 +69,8 @@ namespace SolarStationServer.Viewer.Hubs
             DateTime dateD0 = DateTime.Now.Date.AddDays(-1);
             DateTime dateD1 = DateTime.Now.Date.AddDays(1);
 
-            var allDatas = from data in m_mySQLDal.getAllSolarStationDatas()
+            var allDatas = from data in m_mySQLDal.getAllSolarStationDatas(dateD0, dateD1)
                            orderby data.datetime
-                           where data.datetime >= dateD0 && data.datetime < dateD1
                            select data;
 
             dynamic ret = new
@@ -98,19 +100,6 @@ namespace SolarStationServer.Viewer.Hubs
                             extpressureKPA = allDataD1s.Where(p => p.lightsensorRAW.HasValue).Average(p => p.extpressurePA) / 1000.0d,
                         },
                      }).ToArray()
-                //Datas = from data in m_mySQLDal.getAllSolarStationDatas()
-                //        orderby data.datetime
-                //        group data by new
-                //        {
-                //            QuarterText = FormatUtil.formatDateYMDQuarter(data.datetime)
-                //        }
-                //        into g
-                //        select new
-                //        {
-                //            Xvalue = g.Key.QuarterText,
-
-
-                        //        }
             };
 
 
