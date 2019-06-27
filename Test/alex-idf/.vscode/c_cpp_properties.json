@@ -1,0 +1,26 @@
+{
+    "configurations": [
+        {
+            "name": "ESP32",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:/Users/alex/Apps/ESP/esp-idf/components/**",
+                "C:/Users/alex/Apps/ESP/msys32/opt/xtensa-esp32-elf/lib/gcc/xtensa-esp32-elf/5.2.0/include/**",
+                "C:/Users/alex/Apps/ESP/msys32/opt/xtensa-esp32-elf/xtensa-esp32-elf/include/**"
+            ],
+            "defines": [
+                "CONFIG_FREERTOS_HZ=100",
+                "CONFIG_ESP32_WIFI_STATIC_RX_BUFFER_NUM",
+                "CONFIG_ESP32_WIFI_DYNAMIC_RX_BUFFER_NUM",
+                "CONFIG_ESP32_WIFI_TX_BUFFER_TYPE"
+
+            ],
+            "windowsSdkVersion": "10.0.17763.0",
+            "compilerPath": "C:/Users/alex/Apps/ESP/msys32/opt/xtensa-esp32-elf/bin/xtensa-esp32-elf-g++.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-x64"
+        }
+    ],
+    "version": 4
+}
