@@ -5,7 +5,7 @@
 
 
 // True RTC micros count since the ESP32 was first powered up
-static uint64_t rtc_micros()
+static inline uint64_t rtc_micros()
 {
     struct timeval curTime;
     gettimeofday(&curTime, NULL);
@@ -13,25 +13,25 @@ static uint64_t rtc_micros()
 }
 
 
-static uint32_t rtc_millis()
+static inline uint32_t rtc_millis()
 {
     return rtc_micros() / 1000;
 }
 
 
-static uint64_t micros()
+static inline uint64_t micros()
 {
     return esp_timer_get_time();
 }
 
 
-static uint32_t millis()
+static inline uint32_t millis()
 {
     return micros() / 1000;
 }
 
 
-static void delay(uint32_t ms)
+static inline void delay(uint32_t ms)
 {
     usleep(ms * 1000); // Will choose automatically between a loop delay or vTaskDelay
 }

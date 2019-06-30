@@ -1,5 +1,9 @@
 // This code is heavily inspired by Adafruit_BMP085, but given the nature of the
 // port (Arduino to esp-idf, C++ to C) very little original code remains.
+
+/**
+ * This module supports BMP085, BMP180, and soon BMP280
+ */
 static const char *MODULE = "BMP180";
 
 #include <stdlib.h>
@@ -8,10 +12,7 @@ static const char *MODULE = "BMP180";
 #include <stdint.h>
 #include <unistd.h>
 #include <math.h>
-#include "FreeRTOS/FreeRTOS.h"
-#include "driver/gpio.h"
 #include "driver/i2c.h"
-#include "esp_pm.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
@@ -20,20 +21,16 @@ static const char *MODULE = "BMP180";
 
 static bool i2c_write(i2c_port_t i2c_num, uint8_t i2c_address, uint8_t *data, uint8_t len)
 {
-    esp_err_t ret;
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (i2c_address << 1) | I2C_MASTER_WRITE, true);
     i2c_master_write(cmd, data, len, true);
     i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(i2c_num, cmd, 10 / portTICK_PERIOD_MS);
+    esp_err_t ret = i2c_master_cmd_begin(i2c_num, cmd, 10 / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmd);
 
     if (ret == ESP_ERR_INVALID_STATE) {
         ESP_LOGE(MODULE, "You need to initialize the i2c driver first with i2c_driver_install");
-    }
-    else if (ret != ESP_OK) {
-        ESP_LOGE(MODULE, "I2C Error: %s", esp_err_to_name(ret));
     }
 
     return ret == ESP_OK;
@@ -42,20 +39,16 @@ static bool i2c_write(i2c_port_t i2c_num, uint8_t i2c_address, uint8_t *data, ui
 
 static bool i2c_read(i2c_port_t i2c_num, uint8_t i2c_address, uint8_t *out, uint8_t len)
 {
-    esp_err_t ret;
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, i2c_address << 1 | I2C_MASTER_READ, true);
     i2c_master_read(cmd, out, len, I2C_MASTER_NACK);
     i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(i2c_num, cmd, 1000 / portTICK_RATE_MS);
+    esp_err_t ret = i2c_master_cmd_begin(i2c_num, cmd, 1000 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
 
     if (ret == ESP_ERR_INVALID_STATE) {
         ESP_LOGE(MODULE, "You need to initialize the i2c driver first with i2c_driver_install");
-    }
-    else if (ret != ESP_OK) {
-        ESP_LOGE(MODULE, "I2C Error: %s", esp_err_to_name(ret));
     }
 
     return ret == ESP_OK;
@@ -100,7 +93,6 @@ static uint32_t readRawPressure(bmp180_dev_t *dev)
 
     return raw;
 }
-
 
 
 bmp180_dev_t* BMP180_init(i2c_port_t i2c_num, uint8_t i2c_address, uint8_t oversampling)
@@ -178,16 +170,16 @@ float BMP180_readPressure(bmp180_dev_t *dev)
     B7 = ((uint32_t)UP - B3) * (uint32_t)( 50000UL >> dev->oversampling );
 
     if (B7 < 0x80000000) {
-    p = (B7 * 2) / B4;
+        p = (B7 * 2) / B4;
     } else {
-    p = (B7 / B4) * 2;
+        p = (B7 / B4) * 2;
     }
     X1 = (p >> 8) * (p >> 8);
     X1 = (X1 * 3038) >> 16;
     X2 = (-7357 * p) >> 16;
 
 
-    p = p + ((X1 + X2 + (int32_t)3791)>>4);
+    p = p + ((X1 + X2 + (int32_t)3791) >> 4);
     return p;
 }
 

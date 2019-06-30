@@ -51,6 +51,7 @@ bool dht_read(uint8_t type, uint8_t pin, float *tempC, float *humidity)
         pulse_time(pin, 1) > 1000
     ) {
         portENABLE_INTERRUPTS();
+        ESP_LOGW(MODULE, "Pulse timeout!");
         return false;
     }
 
@@ -68,7 +69,7 @@ bool dht_read(uint8_t type, uint8_t pin, float *tempC, float *humidity)
 
     // Check we read 40 bits and that the checksum matches. From Adafruit_DHT
     if (data[4] == ((data[0] + data[1] + data[2] + data[3]) & 0xFF)) {
-        float t = -65535, h = -65535;
+        float t, h;
 
         if (type == DHT22) {
             t = ((uint32_t)(data[2] & 0x7F)) << 8 | data[3];

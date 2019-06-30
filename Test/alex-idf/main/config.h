@@ -6,6 +6,7 @@
 #define I2C_SDA_PIN 21
 #define I2C_SCL_PIN 22
 
+// SPI
 #define SD_PIN_NUM_MISO 19
 #define SD_PIN_NUM_MOSI 23
 #define SD_PIN_NUM_CLK  18

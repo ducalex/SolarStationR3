@@ -7,5 +7,6 @@ COMPONENT_ADD_INCLUDEDIRS += ../components/cfgparser
 COMPONENT_ADD_INCLUDEDIRS += ../components/display
 COMPONENT_ADD_INCLUDEDIRS += ../components/DHT
 COMPONENT_ADD_INCLUDEDIRS += ../components/BMP180
+COMPONENT_ADD_INCLUDEDIRS += ../components/ADS1x15
 
 COMPONENT_SRCDIRS := . helpers

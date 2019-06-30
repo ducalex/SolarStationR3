@@ -37,12 +37,12 @@
 static char *STATION_NAME;         // 32
 static char *WIFI_SSID;            // 32
 static char *WIFI_PASSWORD;        // 64
-static char *HTTP_UPDATE_URL;     // 128
+static char *HTTP_UPDATE_URL;      // 128
 static char *HTTP_UPDATE_USERNAME; // 64
 static char *HTTP_UPDATE_PASSWORD; // 64
-static int   HTTP_UPDATE_TIMEOUT_MS;
-static int   POLL_INTERVAL_MS;
-static int   POLL_METHOD;
+static int   HTTP_UPDATE_TIMEOUT;  // Seconds
+static int   POLL_INTERVAL;        // Seconds
+static int   POLL_METHOD;          //
 
 static sdmmc_card_t* sdcard;
 static bool sdcard_mounted;
@@ -51,7 +51,6 @@ static uint32_t start_time;
 static FILE *logFile;
 
 static EventGroupHandle_t event_group;
-static char *EMPTY_STR = "";
 
 RTC_DATA_ATTR static uint32_t wake_count = 0;
 RTC_DATA_ATTR static uint32_t boot_time = 0;
@@ -187,7 +186,7 @@ static void wifi_deinit()
 static void sdcard_init()
 {
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-    //host.slot = VSPI_HOST;
+    host.max_freq_khz = SDMMC_FREQ_PROBING;
 
     sdspi_slot_config_t slot_config = SDSPI_SLOT_CONFIG_DEFAULT();
     slot_config.gpio_miso = (gpio_num_t)SD_PIN_NUM_MISO;
@@ -279,7 +278,7 @@ static void http_request(void *data)
         .method = HTTP_METHOD_POST,
         .username = HTTP_UPDATE_USERNAME,
         .password = HTTP_UPDATE_PASSWORD,
-        .timeout_ms = HTTP_UPDATE_TIMEOUT_MS,
+        .timeout_ms = HTTP_UPDATE_TIMEOUT * 1000,
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -317,6 +316,13 @@ void app_main()
     ESP_LOGI("Uptime", "%d seconds (Cycles: %d)", (rtc_millis() - boot_time) / 1000, wake_count);
     debug_memory_stats();
 
+    if (boot_time == 0) {
+        boot_time = rtc_millis();
+    }
+
+    start_time = rtc_millis();
+    wake_count++;
+
     esp_pm_config_esp32_t pm_config = {
         .max_freq_mhz = 240,
         .min_freq_mhz = 240,
@@ -324,13 +330,6 @@ void app_main()
         .light_sleep_enable = true
     };
     esp_pm_configure(&pm_config);
-
-    if (boot_time == 0) {
-        boot_time = rtc_millis();
-    }
-
-    start_time = rtc_millis();
-    wake_count++;
 
     // Reduce verbosity of some logs
     esp_log_level_set("wifi", ESP_LOG_WARN);
@@ -360,27 +359,15 @@ void app_main()
         config_load_nvs("config");
     }
 
-    // Even if config load failed we need to populate the default values
-    STATION_NAME = config_get_string("station.name", "Station");
-    WIFI_SSID = config_get_string("wifi.ssid", NULL);
-    WIFI_PASSWORD = config_get_string("wifi.password", NULL);
-    HTTP_UPDATE_URL = config_get_string("http.update_url", NULL);
+    STATION_NAME         = config_get_string("station.name", "Station");
+    WIFI_SSID            = config_get_string("wifi.ssid", NULL);
+    WIFI_PASSWORD        = config_get_string("wifi.password", NULL);
+    HTTP_UPDATE_URL      = config_get_string("http.update_url", NULL);
     HTTP_UPDATE_USERNAME = config_get_string("http.update_username", NULL);
     HTTP_UPDATE_PASSWORD = config_get_string("http.update_password", NULL);
-    HTTP_UPDATE_TIMEOUT_MS = config_get_int("http.update_timeout_ms", 30 * 1000);
-    POLL_INTERVAL_MS = config_get_int("poll.interval_ms", 30 * 1000);
-    POLL_METHOD = config_get_int("poll.method", 0);
-/*
-    config_get_string_r("station.name", &STATION_NAME);
-    config_get_string_r("wifi.ssid", &WIFI_SSID);
-    config_get_string_r("wifi.password", &WIFI_PASSWORD);
-    config_get_string_r("http.update_url", &HTTP_UPDATE_URL);
-    config_get_string_r("http.update_username", &HTTP_UPDATE_USERNAME);
-    config_get_string_r("http.update_password", &HTTP_UPDATE_PASSWORD);
-    config_get_int_r("http.update_timeout", &HTTP_UPDATE_TIMEOUT_MS);
-    config_get_int_r("poll.interval", &POLL_INTERVAL_MS);
-    config_get_int_r("poll.method", &POLL_METHOD);
-*/
+    HTTP_UPDATE_TIMEOUT  = config_get_int("http.update_timeout", 30);
+    POLL_INTERVAL        = config_get_int("poll.interval", 30);
+    POLL_METHOD          = config_get_int("poll.method", 0);
 
     bool use_wifi = (WIFI_SSID != NULL) && (HTTP_UPDATE_URL != NULL);
 
@@ -435,12 +422,16 @@ void app_main()
     delay(5 * 1000);
     display_deinit();
 
+    // One last time
+    debug_memory_stats();
+
 
     // Sleep
-    int sleep_time = POLL_INTERVAL_MS - (rtc_millis() - start_time);
+    int interval_ms = POLL_INTERVAL * 1000;
+    int sleep_time = interval_ms - (rtc_millis() - start_time);
 
     if (sleep_time < 100) {
-        sleep_time = MAX(100, POLL_INTERVAL_MS);
+        sleep_time = MAX(100, interval_ms);
         ESP_LOGW(__func__, "Bogus sleep time, did we spend too much time processing?");
     }
 
