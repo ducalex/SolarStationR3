@@ -1,4 +1,4 @@
-// Simple configuration file handler
+static const char *MODULE = "config";
 
 #include <string.h>
 #include <strings.h>
@@ -9,6 +9,10 @@
 #include <stdbool.h>
 #include <cJSON.h>
 
+#include "esp_log.h"
+#include "nvs_flash.h"
+
+
 static cJSON *root;
 
 
@@ -18,8 +22,11 @@ bool config_load_file(const char *file)
 
     FILE *fp = fopen(file, "r");
 
-    if (fp == NULL)
+    if (fp == NULL) {
+        ESP_LOGW(MODULE, "Unable to open file: %s", file);
         return false;
+    }
+
 
     fread(buffer, 1, 16 * 1024, fp);
 
@@ -28,19 +35,133 @@ bool config_load_file(const char *file)
     fclose(fp);
     free(buffer);
 
+    if (root != NULL) {
+        ESP_LOGI(MODULE, "Configuration loaded from %s", file);
+    } else {
+        ESP_LOGW(MODULE, "Configuration failed to load from %s", file);
+    }
+
     return (root != NULL);
 }
 
 
 bool config_save_file(const char *file)
 {
-    return false;
+    char *data = NULL;
+    bool ret = false;
+
+    FILE *fp = fopen(file, "r");
+
+    if (fp == NULL) {
+        ESP_LOGW(MODULE, "Unable to open file: %s", file);
+        return false;
+    }
+
+    if (root) {
+        data = cJSON_Print(root);
+    }
+
+    if (data == NULL) {
+        data = strdup("{\"Error\":\"No configuration\"}"); // Or return false?
+    }
+
+    ret = (fwrite(data, strlen(data), 1, fp) == 1);
+
+    fclose(fp);
+    free(data);
+
+    return ret;
+}
+
+
+// At the moment we are lazy and just store the json in nvs, rather than mapping each K/V...
+bool config_load_nvs(const char *namespace)
+{
+    char *buffer = malloc(4096);
+    size_t len;
+    nvs_handle nvs_h;
+    nvs_open(namespace, NVS_READONLY, &nvs_h);
+    if (nvs_get_str(nvs_h, "json", buffer, &len) == ESP_OK) {
+        root = cJSON_Parse(buffer);
+    }
+    nvs_close(nvs_h);
+    free(buffer);
+
+    if (root != NULL) {
+        ESP_LOGI(MODULE, "Configuration loaded from NVS");
+    } else {
+        ESP_LOGW(MODULE, "Configuration failed to load from NVS");
+    }
+
+    return (root != NULL);
+}
+
+
+bool config_save_nvs(const char *namespace)
+{
+    char *buffer = malloc(4096);
+    size_t len;
+
+    char *data = NULL;
+    bool ret = false;
+
+    if (root) {
+        data = cJSON_PrintUnformatted(root);
+    }
+
+    if (data == NULL) {
+        data = strdup("{\"Error\":\"No configuration\"}"); // Or return false?
+    }
+
+    nvs_handle nvs_h;
+    nvs_open(namespace, NVS_READWRITE, &nvs_h);
+
+    // To avoid flash wear we check if the currently stored value is identical to our "new" one
+    if (nvs_get_str(nvs_h, "json", buffer, &len) != ESP_OK || strncmp(data, buffer, strlen(data)) != 0) {
+        ret = nvs_set_str(nvs_h, "json", data);
+        ESP_LOGI(MODULE, "NVS content written, result: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(MODULE, "NVS content identical, no need to overwrite");
+    }
+
+    nvs_commit(nvs_h);
+    nvs_close(nvs_h);
+
+    free(buffer);
+    free(data);
+
+    return (ret == ESP_OK);
 }
 
 
 void config_free()
 {
     cJSON_Delete(root);
+}
+
+
+bool config_get_string_r(const char *key, char *out, int max_len)
+{
+    cJSON *obj = cJSON_GetObjectItem(root, key);
+    if (obj == NULL || obj->valuestring == NULL) return false;
+    strncpy(out, obj->valuestring, max_len);
+    return true;
+}
+
+
+bool config_get_int_r(const char *key, int *out)
+{
+    cJSON *obj = cJSON_GetObjectItem(root, key);
+    if (obj != NULL) *out = obj->valueint;
+    return obj != NULL;
+}
+
+
+bool config_get_double_r(const char *key, double *out)
+{
+    cJSON *obj = cJSON_GetObjectItem(root, key);
+    if (obj != NULL) *out = obj->valuedouble;
+    return obj != NULL;
 }
 
 
@@ -72,84 +193,3 @@ double config_get_double(const char *key, double default_value)
     }
     return obj->valuedouble;
 }
-
-
-#if 0
-// Poor hand crafted parser, it just can't compete with json :(
-typedef struct {
-    char *key;
-    char *value;
-} config_param_t;
-
-static config_param_t params[64];
-static int params_count;
-
-
-static char *trim(char *s)
-{
-    int l = strlen(s);
-
-    while(isspace((unsigned char)s[l - 1])) --l;
-    while(*s && isspace((unsigned char)*s)) ++s, --l;
-
-    return strndup(s, l);
-}
-
-
-bool config_load_file(const char *file)
-{
-    char buffer[512];
-    char *ptr;
-
-    FILE *fp = fopen(file, "r");
-
-    if (fp == NULL)
-        return false;
-
-    while (fgets(buffer, sizeof(buffer), fp) != NULL)
-    {
-        if (buffer[0] == '\r' || buffer[0] == '\n' || buffer[0] == '#')
-            continue;
-
-        if ((ptr = strtok(buffer, "=")) != NULL) {
-            config_param_t *param = &params[params_count++];
-
-            param->key = trim(ptr);
-            ptr = strtok(NULL, "=");
-            param->value = trim(ptr);
-        }
-    }
-
-    fclose(fp);
-
-    return true;
-}
-
-
-void config_free()
-{
-
-}
-
-
-const char *config_get_string(const char *key)
-{
-    for (int i = 0; i < params_count; i++) {
-        if (strcasecmp(key, params[i].key) == 0) {
-            return params[i].value;
-        }
-    }
-    return NULL;
-}
-
-
-const int config_get_int(const char *key)
-{
-    for (int i = 0; i < params_count; i++) {
-        if (strcasecmp(key, params[i].key) == 0) {
-            return atoi(params[i].value);
-        }
-    }
-    return NULL;
-}
-#endif

@@ -1,3 +1,5 @@
+static const char *MODULE = "DHT";
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
@@ -5,10 +7,8 @@
 #include <unistd.h>
 #include "FreeRTOS/FreeRTOS.h"
 #include "driver/gpio.h"
-#include "esp_pm.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-
 #include "DHT.h"
 
 static uint32_t pulse_time(uint8_t pin, bool level)
@@ -94,7 +94,7 @@ bool dht_read(uint8_t type, uint8_t pin, float *tempC, float *humidity)
         return true;
     }
     else {
-        ESP_LOGW("DHT", "checksum failure!");
+        ESP_LOGW(MODULE, "checksum failure!");
         return false;
     }
 }

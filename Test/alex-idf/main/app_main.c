@@ -29,16 +29,17 @@
 #include "sensors.h"
 
 #include "helpers/time.h"
+#include "helpers/i2c.h"
 
 #include "config.h"
 //}
 
-static char *STATION_NAME;
-static char *WIFI_SSID;
-static char *WIFI_PASSWORD;
-static char *HTTP_UPDATE_URL;
-static char *HTTP_UPDATE_USERNAME;
-static char *HTTP_UPDATE_PASSWORD;
+static char *STATION_NAME;         // 32
+static char *WIFI_SSID;            // 32
+static char *WIFI_PASSWORD;        // 64
+static char *HTTP_UPDATE_URL;     // 128
+static char *HTTP_UPDATE_USERNAME; // 64
+static char *HTTP_UPDATE_PASSWORD; // 64
 static int   HTTP_UPDATE_TIMEOUT_MS;
 static int   POLL_INTERVAL_MS;
 static int   POLL_METHOD;
@@ -48,6 +49,7 @@ static bool sdcard_mounted;
 static char tmpBuffer[512];
 static uint32_t start_time;
 static FILE *logFile;
+
 static EventGroupHandle_t event_group;
 static char *EMPTY_STR = "";
 
@@ -149,13 +151,6 @@ static void wifi_init()
 {
     ESP_LOGI(__func__, "Connecting to: '%s'", WIFI_SSID);
 
-    // Init NVS, wifi stores calibration in it
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        _debug( nvs_flash_erase() );
-        _debug( nvs_flash_init() );
-    }
-
     // Init TCP/IP Stack
     tcpip_adapter_init();
 
@@ -164,7 +159,9 @@ static void wifi_init()
 
     wifi_config_t wifi_config = {0};
     strncpy((char*)wifi_config.sta.ssid, WIFI_SSID, 31);
-    strncpy((char*)wifi_config.sta.password, WIFI_PASSWORD, 63);
+    if (WIFI_PASSWORD != NULL) {
+        strncpy((char*)wifi_config.sta.password, WIFI_PASSWORD, 63);
+    }
 
     _debug( esp_wifi_init(&wifi_init_cfg) );
     _debug( esp_wifi_set_mode(WIFI_MODE_STA) );
@@ -190,6 +187,7 @@ static void wifi_deinit()
 static void sdcard_init()
 {
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    //host.slot = VSPI_HOST;
 
     sdspi_slot_config_t slot_config = SDSPI_SLOT_CONFIG_DEFAULT();
     slot_config.gpio_miso = (gpio_num_t)SD_PIN_NUM_MISO;
@@ -340,6 +338,15 @@ void app_main()
     event_group = xEventGroupCreate();
     esp_event_loop_init(event_handler, NULL);
 
+    // Init NVS for wifi calibration and our settings
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        _debug( nvs_flash_erase() );
+        _debug( nvs_flash_init() );
+    }
+
+    i2c_fast_init(I2C_NUM_0, I2C_SDA_PIN, I2C_SCL_PIN, 200 * 1000);
+
     display_init();
     sdcard_init();
 
@@ -348,26 +355,34 @@ void app_main()
     }
 
     if (config_load_file("/sdcard/config.json")) {
-        ESP_LOGI(__func__, "Config file loaded!");
-    }
-    else {
-        ESP_LOGW(__func__, "Config file failed to load!");
+        config_save_nvs("config");
+    } else {
+        config_load_nvs("config");
     }
 
     // Even if config load failed we need to populate the default values
-    STATION_NAME = config_get_string("station.name", EMPTY_STR);
-    WIFI_SSID = config_get_string("wifi.ssid", EMPTY_STR);
-    WIFI_PASSWORD = config_get_string("wifi.password", EMPTY_STR);
-    HTTP_UPDATE_URL = config_get_string("http.update_url", EMPTY_STR);
+    STATION_NAME = config_get_string("station.name", "Station");
+    WIFI_SSID = config_get_string("wifi.ssid", NULL);
+    WIFI_PASSWORD = config_get_string("wifi.password", NULL);
+    HTTP_UPDATE_URL = config_get_string("http.update_url", NULL);
     HTTP_UPDATE_USERNAME = config_get_string("http.update_username", NULL);
     HTTP_UPDATE_PASSWORD = config_get_string("http.update_password", NULL);
-    HTTP_UPDATE_TIMEOUT_MS = config_get_int("http.update_timeout", 30) * 1000;
-    POLL_INTERVAL_MS = config_get_int("poll.interval", 30) * 1000;
+    HTTP_UPDATE_TIMEOUT_MS = config_get_int("http.update_timeout_ms", 30 * 1000);
+    POLL_INTERVAL_MS = config_get_int("poll.interval_ms", 30 * 1000);
     POLL_METHOD = config_get_int("poll.method", 0);
+/*
+    config_get_string_r("station.name", &STATION_NAME);
+    config_get_string_r("wifi.ssid", &WIFI_SSID);
+    config_get_string_r("wifi.password", &WIFI_PASSWORD);
+    config_get_string_r("http.update_url", &HTTP_UPDATE_URL);
+    config_get_string_r("http.update_username", &HTTP_UPDATE_USERNAME);
+    config_get_string_r("http.update_password", &HTTP_UPDATE_PASSWORD);
+    config_get_int_r("http.update_timeout", &HTTP_UPDATE_TIMEOUT_MS);
+    config_get_int_r("poll.interval", &POLL_INTERVAL_MS);
+    config_get_int_r("poll.method", &POLL_METHOD);
+*/
 
-    //config_save_file("/sdcard/config.json");
-
-    bool use_wifi = strlen(WIFI_SSID) && strlen(HTTP_UPDATE_URL);
+    bool use_wifi = (WIFI_SSID != NULL) && (HTTP_UPDATE_URL != NULL);
 
     // Connect to wifi
     if (use_wifi) {

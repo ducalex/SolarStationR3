@@ -2,11 +2,17 @@
 
 #define FACTORY_RESET_PIN 15 // Just a reminder to not use this pin
 
-//#define STDOUT_TO_SDCARD 1
+// I2C
+#define I2C_SDA_PIN 21
+#define I2C_SCL_PIN 22
+
 #define SD_PIN_NUM_MISO 19
 #define SD_PIN_NUM_MOSI 23
 #define SD_PIN_NUM_CLK  18
 #define SD_PIN_NUM_CS 5
+
+//#define LOG_TO_SDCARD 1
+
 
 #define BMPSENSORACTIVE 0
 
