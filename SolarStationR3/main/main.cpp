@@ -15,7 +15,7 @@ RTC_DATA_ATTR static uint32_t start_time = 0;
 #define PRINT_MEMORY_STATS() { \
   multi_heap_info_t info; \
   heap_caps_get_info(&info, MALLOC_CAP_DEFAULT); \
-  ESP_LOGI("Memory", "Used: %d KB   Free: %d KB", \
+  ESP_LOGI("Memory", "Memory: Used: %d KB   Free: %d KB", \
         info.total_allocated_bytes / 1024, info.total_free_bytes / 1024); }
 
 
@@ -45,7 +45,7 @@ void hibernate()
 void setup()
 {
     printf("\n################### WEATHER STATION (Ver: %s) ###################\n\n", PROJECT_VER);
-    ESP_LOGI("Uptime", "%d seconds (Cycles: %d)", (rtc_millis() - boot_time) / 1000, wake_count);
+    ESP_LOGI("Uptime", "Uptime: %d seconds (Cycles: %d)", (rtc_millis() - boot_time) / 1000, wake_count);
     PRINT_MEMORY_STATS();
 
     if (boot_time == 0) {
