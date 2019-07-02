@@ -3,5 +3,5 @@
 #
 # (Uses default behaviour of compiling all source files in directory, adding 'include' to include path.)
 
-COMPONENT_ADD_INCLUDEDIRS += ../components/arduino
-COMPONENT_ADD_INCLUDEDIRS += ../components/cfgparser
+COMPONENT_ADD_INCLUDEDIRS += ../components/Arduino
+COMPONENT_ADD_INCLUDEDIRS += ../components/ConfigProvider
