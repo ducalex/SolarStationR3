@@ -1,8 +1,9 @@
 #include "Arduino.h"
-#include "nvs_flash.h"
 #include "ConfigProvider.h"
+#include "DHT.h"
 #include "SD.h"
 
+#include "helpers/display.h"
 #include "helpers/config.h"
 #include "helpers/time.h"
 #include "config.h"
@@ -19,11 +20,11 @@ RTC_DATA_ATTR static uint32_t start_time = 0;
         info.total_allocated_bytes / 1024, info.total_free_bytes / 1024); }
 
 
-void hibernate()
+static void hibernate()
 {
     // Cleanup
+    Display.end();
     SD.end();
-    SPI.end();
 
     // Sleep
     int interval_ms = POLL_INTERVAL * 1000;
@@ -55,6 +56,9 @@ void setup()
     start_time = rtc_millis();
     wake_count++;
 
+    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+    Display.begin();
+
     if (SD.begin()) {
         ESP_LOGI(__func__, "SD Card successfully mounted.");
     } else {
@@ -63,11 +67,8 @@ void setup()
 
     loadConfiguration();
 
-    if (access(CONFIG_FILE, F_OK) == -1) {
-        saveConfiguration();
-    }
-
     ESP_LOGI(__func__, "Station name: %s", STATION_NAME);
+    Display.printf("# %s #\n\n", STATION_NAME);
 
     PRINT_MEMORY_STATS();
 }
@@ -75,6 +76,16 @@ void setup()
 
 void loop()
 {
+    Display.printf("Hello world!\n");
+
+    float t, h, p;
+    if (dht_read(DHT_TYPE, DHT_PIN, &t, &h)) {
+        ESP_LOGI(__func__, "DHT: %.2f %.2f", t, h);
+        Display.printf("DHT: %.2f %.2f\n", t, h);
+    }
+
+    delay(DISPLAY_TIMEOUT * 1000);
+
     ESP_LOGI("loop", "Looperino");
     hibernate();
 }

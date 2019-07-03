@@ -1,32 +1,48 @@
-// Fake rolling average with no buffer!
-#include <float.h>
-
-#define new_AVGr(x) {x, 0, FLT_MAX, FLT_MIN, 0.00, 0.00}
-#define AVGr avgr_handle_t
-
-typedef struct {
-    short nsamples;
-    short count;
-    float min; // All time min, not min in last nsamples
-    float max; // All time max, not max in last nsamples
-    float avg; // Decaying weighted average faking avg of last nsamples
-    float val; // Last added value
-} avgr_handle_t;
-
-
-avgr_handle_t avgr_init(short nsamples)
+class AVGr
 {
-    avgr_handle_t handle = new_AVGr(nsamples);
-    return handle;
-}
+  private:
+    short m_nsamples;
+    short m_count;
+    float m_min; // All time min, not min in last nsamples
+    float m_max; // All time max, not max in last nsamples
+    float m_avg; // Decaying weighted average faking avg of last nsamples
+    float m_val; // Last added value
 
+  public:
+    AVGr(short maximum)
+    {
+        m_min = m_max = m_avg = m_val = 0.00f;
+        m_nsamples = maximum;
+        m_count = 0;
+    }
 
-void avgr_add(avgr_handle_t *handle, float value)
-{
-    if (handle->count + 1 < handle->nsamples)
-        handle->count++;
-    handle->avg = (handle->avg * ((float)(handle->count - 1) / handle->count)) + value / handle->count;
-    handle->val = value;
-    if (value < handle->min) handle->min = value;
-    if (value > handle->max) handle->max = value;
-}
+    void add(float newValue)
+    {
+        if (m_count + 1 < m_nsamples)
+            m_count++;
+        m_avg = (m_avg * ((float)(m_count - 1) / m_count)) + newValue / m_count;
+        m_val = newValue;
+        if (newValue < m_min || m_count == 1) m_min = newValue;
+        if (newValue > m_max || m_count == 1) m_max = newValue;
+    }
+
+    float getAvg()
+    {
+        return m_avg;
+    }
+
+    float getMin()
+    {
+        return m_min;
+    }
+
+    float getMax()
+    {
+        return m_max;
+    }
+
+    float getVal()
+    {
+        return m_val;
+    }
+};
