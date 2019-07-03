@@ -648,6 +648,10 @@ uint8_t sdcard_uninit(uint8_t pdrv)
     if (pdrv >= FF_VOLUMES || card == NULL) {
         return 1;
     }
+
+    sdTransaction(pdrv, GO_IDLE_STATE, 0, NULL);
+    pinMode(card->ssPin, INPUT);
+
     ff_diskio_register(pdrv, NULL);
     s_cards[pdrv] = NULL;
     esp_err_t err = ESP_OK;
