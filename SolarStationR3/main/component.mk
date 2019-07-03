@@ -5,3 +5,5 @@
 
 COMPONENT_ADD_INCLUDEDIRS += ../components/Arduino
 COMPONENT_ADD_INCLUDEDIRS += ../components/ConfigProvider
+COMPONENT_ADD_INCLUDEDIRS += ../components/SSD1306Ascii/src
+COMPONENT_ADD_INCLUDEDIRS += ../components/DHT
