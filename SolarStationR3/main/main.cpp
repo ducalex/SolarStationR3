@@ -1,12 +1,16 @@
 #include "Arduino.h"
+#include "WiFi.h"
 #include "ConfigProvider.h"
 #include "DHT.h"
 #include "SD.h"
+#include "esp_log.h"
+#include "esp_pm.h"
 
+#include "config.h"
 #include "helpers/display.h"
 #include "helpers/config.h"
 #include "helpers/time.h"
-#include "config.h"
+#include "helpers/avgr.h"
 
 RTC_DATA_ATTR static uint32_t wake_count = 0;
 RTC_DATA_ATTR static uint32_t boot_time = 0;
@@ -36,16 +40,24 @@ static void hibernate()
     }
 
     ESP_LOGI(__func__, "Sleeping for %dms", sleep_time);
-    //esp_deep_sleep(sleep_time * 1000);
     esp_sleep_enable_timer_wakeup(sleep_time * 1000);
     //esp_light_sleep_start();
     esp_deep_sleep_start();
 }
 
 
+static void readSensors()
+{
+    float t, h, p;
+    if (dht_read(DHT_TYPE, DHT_PIN, &t, &h)) {
+        ESP_LOGI(__func__, "DHT: %.2f %.2f", t, h);
+    }
+}
+
+
 void setup()
 {
-    printf("\n################### WEATHER STATION (Ver: %s) ###################\n\n", PROJECT_VER);
+    printf("\n################### WEATHER STATION (Version: %s) ###################\n\n", PROJECT_VER);
     ESP_LOGI("Uptime", "Uptime: %d seconds (Cycles: %d)", (rtc_millis() - boot_time) / 1000, wake_count);
     PRINT_MEMORY_STATS();
 
@@ -55,6 +67,17 @@ void setup()
 
     start_time = rtc_millis();
     wake_count++;
+
+    /* This seems to interfer with Arduino I2C
+    esp_pm_config_esp32_t pm_config;
+        pm_config.max_freq_mhz = 240;
+        pm_config.min_freq_mhz = 240; // 40
+        pm_config.light_sleep_enable = true;
+    esp_pm_configure(&pm_config);
+    */
+
+    // Reduce verbosity of some logs
+    esp_log_level_set("wifi", ESP_LOG_WARN);
 
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     Display.begin();
@@ -68,24 +91,54 @@ void setup()
     loadConfiguration();
 
     ESP_LOGI(__func__, "Station name: %s", STATION_NAME);
-    Display.printf("# %s #\n\n", STATION_NAME);
-
-    PRINT_MEMORY_STATS();
+    Display.printf("# %s #\n", STATION_NAME);
 }
 
 
 void loop()
 {
-    Display.printf("Hello world!\n");
+    bool wifi_available = strlen(WIFI_SSID) > 0;
 
-    float t, h, p;
-    if (dht_read(DHT_TYPE, DHT_PIN, &t, &h)) {
-        ESP_LOGI(__func__, "DHT: %.2f %.2f", t, h);
-        Display.printf("DHT: %.2f %.2f\n", t, h);
+    PRINT_MEMORY_STATS();
+
+    if (wifi_available) {
+        ESP_LOGI(__func__, "WiFi: Connecting to: '%s'...", WIFI_SSID);
+        Display.printf("Connecting to %s...", WIFI_SSID);
+
+        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+        WiFi.setSleep(true);
+
+        // Read sensors while wifi connects
+        readSensors();
+
+        while (WiFi.status() != WL_CONNECTED && (rtc_millis() - start_time) < (POLL_INTERVAL * 1000)) {
+            delay(500);
+            Display.printf(".");
+        }
+
+        if (WiFi.status() == WL_CONNECTED) {
+            ESP_LOGI(__func__, "WiFi: Connected to: '%s' with IP %s", WIFI_SSID, WiFi.localIP().toString().c_str());
+            Display.printf("\nConnected!\nIP: %s", WiFi.localIP().toString().c_str());
+
+            // Now do the HTTP Request
+        }
+        else {
+            ESP_LOGW(__func__, "WiFi: Failed to connect to: '%s'", WIFI_SSID);
+            Display.printf("\nFailed!");
+        }
+        PRINT_MEMORY_STATS();
+
+        WiFi.disconnect(true);
+    }
+    else {
+        ESP_LOGI(__func__, "WiFi: No configuration");
+        Display.printf("WiFi disabled!\n");
+        readSensors();
     }
 
+    // Fill the screen with sensor info and keep it on for a few seconds
     delay(DISPLAY_TIMEOUT * 1000);
 
-    ESP_LOGI("loop", "Looperino");
+    // Sleep
     hibernate();
 }

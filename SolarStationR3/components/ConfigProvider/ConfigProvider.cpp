@@ -110,6 +110,7 @@ bool ConfigProvider::loadNVS(const char *ns)
 bool ConfigProvider::saveNVS(const char *ns, bool update_only)
 {
     char *data = cJSON_PrintUnformatted(root);
+
     esp_err_t ret = ESP_OK;
 
     nvs_handle nvs_h = openNVS(ns);
@@ -119,22 +120,27 @@ bool ConfigProvider::saveNVS(const char *ns, bool update_only)
         ESP_LOGI(MODULE, "NVS content deleted (config empty)");
     }
     else {
+        bool update = true;
+
         if (update_only) {
             size_t length = 4000;
             char *buffer = (char*)malloc(4000);
             if (nvs_get_str(nvs_h, "json", buffer, &length) == ESP_OK && strncmp(buffer, data, strlen(data)) == 0) {
-                ESP_LOGI(MODULE, "NVS content identical, no need to update");
+                update = false;
             }
             free(buffer);
         }
-        else {
+
+        if (update) {
             ret = nvs_set_str(nvs_h, "json", data);
             ESP_LOGI(MODULE, "NVS content written, result: %s", esp_err_to_name(ret));
+        } else {
+            ESP_LOGI(MODULE, "NVS content identical, no need to update");
         }
+        free(data);
     }
 
     closeNVS(nvs_h);
-    if (data != NULL) free(data);
 
     return (ret == ESP_OK);
 }

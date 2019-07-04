@@ -1,4 +1,4 @@
-#define PROJECT_VER ""
+#define PROJECT_VER "1"
 
 #define FACTORY_RESET_PIN 15 // Just a reminder to not use this pin
 
