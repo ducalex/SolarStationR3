@@ -1,13 +1,13 @@
 #include "Arduino.h"
 #include "WiFi.h"
 #include "ConfigProvider.h"
-#include "DHT.h"
 #include "SD.h"
 #include "esp_log.h"
 #include "esp_pm.h"
-
 #include "config.h"
+// Most of these should have their own .cpp file, but I'm lazy :(
 #include "helpers/display.h"
+#include "helpers/sensors.h"
 #include "helpers/config.h"
 #include "helpers/time.h"
 #include "helpers/avgr.h"
@@ -30,6 +30,10 @@ static void hibernate()
     Display.end();
     SD.end();
 
+    // Power down our peripherals
+    pinMode(PERIPH_POWER_PIN_1, INPUT_PULLDOWN);
+    pinMode(PERIPH_POWER_PIN_2, INPUT_PULLDOWN);
+
     // Sleep
     int interval_ms = POLL_INTERVAL * 1000;
     int sleep_time = interval_ms - (rtc_millis() - start_time);
@@ -46,15 +50,6 @@ static void hibernate()
 }
 
 
-static void readSensors()
-{
-    float t, h, p;
-    if (dht_read(DHT_TYPE, DHT_PIN, &t, &h)) {
-        ESP_LOGI(__func__, "DHT: %.2f %.2f", t, h);
-    }
-}
-
-
 void setup()
 {
     printf("\n################### WEATHER STATION (Version: %s) ###################\n\n", PROJECT_VER);
@@ -68,6 +63,13 @@ void setup()
     start_time = rtc_millis();
     wake_count++;
 
+    // Power up our peripherals (Do not switch both pin to output at once!)
+    pinMode(PERIPH_POWER_PIN_1, OUTPUT);
+    digitalWrite(PERIPH_POWER_PIN_1, HIGH);
+    pinMode(PERIPH_POWER_PIN_2, OUTPUT);
+    digitalWrite(PERIPH_POWER_PIN_2, HIGH);
+    delay(10); // Wait for peripherals to stabilize
+
     /* This seems to interfer with Arduino I2C
     esp_pm_config_esp32_t pm_config;
         pm_config.max_freq_mhz = 240;
@@ -75,9 +77,6 @@ void setup()
         pm_config.light_sleep_enable = true;
     esp_pm_configure(&pm_config);
     */
-
-    // Reduce verbosity of some logs
-    esp_log_level_set("wifi", ESP_LOG_WARN);
 
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     Display.begin();
@@ -91,7 +90,7 @@ void setup()
     loadConfiguration();
 
     ESP_LOGI(__func__, "Station name: %s", STATION_NAME);
-    Display.printf("# %s #\n", STATION_NAME);
+    Display.printf("# %s #\n\n", STATION_NAME);
 }
 
 
@@ -105,6 +104,7 @@ void loop()
         ESP_LOGI(__func__, "WiFi: Connecting to: '%s'...", WIFI_SSID);
         Display.printf("Connecting to %s...", WIFI_SSID);
 
+        esp_log_level_set("wifi", ESP_LOG_WARN); // Wifi driver is *very* verbose
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
         WiFi.setSleep(true);
 

@@ -7,3 +7,6 @@ COMPONENT_ADD_INCLUDEDIRS += ../components/Arduino
 COMPONENT_ADD_INCLUDEDIRS += ../components/ConfigProvider
 COMPONENT_ADD_INCLUDEDIRS += ../components/SSD1306Ascii/src
 COMPONENT_ADD_INCLUDEDIRS += ../components/DHT
+COMPONENT_ADD_INCLUDEDIRS += ../components/Adafruit_BMP085
+COMPONENT_ADD_INCLUDEDIRS += ../components/Adafruit_ADS1X15
+COMPONENT_ADD_INCLUDEDIRS += ../components/BMP180

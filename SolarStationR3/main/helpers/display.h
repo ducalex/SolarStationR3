@@ -1,4 +1,4 @@
-#include "../../components/SSD1306Ascii/src/SSD1306AsciiWire.h"
+#include "SSD1306AsciiWire.h"
 #include "../config.h"
 
 class DisplaySerial
@@ -50,7 +50,7 @@ public:
 };
 
 
-#ifdef USE_OLED
+#if USE_OLED
 static DisplayOLED Display;
 #else
 static DisplaySerial Display;
