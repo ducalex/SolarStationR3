@@ -1,5 +1,6 @@
 #include "Arduino.h"
 #include "WiFi.h"
+#include "HTTPClient.h"
 #include "ConfigProvider.h"
 #include "SD.h"
 #include "esp_log.h"
@@ -10,7 +11,6 @@
 #include "helpers/sensors.h"
 #include "helpers/config.h"
 #include "helpers/time.h"
-#include "helpers/avgr.h"
 
 RTC_DATA_ATTR static uint32_t wake_count = 0;
 RTC_DATA_ATTR static uint32_t boot_time = 0;
@@ -47,6 +47,44 @@ static void hibernate()
     esp_sleep_enable_timer_wakeup(sleep_time * 1000);
     //esp_light_sleep_start();
     esp_deep_sleep_start();
+}
+
+
+void httpRequest()
+{
+    ESP_LOGI(__func__, "HTTP: POST request to '%s'...", HTTP_UPDATE_URL);
+    Display.printf("HTTP: POST...");
+
+    HTTPClient http;
+
+    http.begin(HTTP_UPDATE_URL);
+    http.setTimeout(HTTP_UPDATE_TIMEOUT * 1000);
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    if (strlen(HTTP_UPDATE_USERNAME) > 0) {
+        http.setAuthorization(HTTP_UPDATE_USERNAME, HTTP_UPDATE_PASSWORD);
+    }
+
+    char payload[512];
+    char *sensors_data = serializeSensors();
+
+    sprintf(payload, "station=%s&ps=%d&uptime=%d&cycles=%d" "&%s",
+        STATION_NAME, 0, (rtc_millis() - boot_time) / 1000, wake_count, sensors_data);
+
+    free(sensors_data);
+
+    ESP_LOGI(__func__, "HTTP: Sending: '%s'", payload);
+
+    int httpCode = http.POST(payload);
+    ESP_LOGI(__func__, "HTTP: Return code: %d", httpCode);
+
+    if (httpCode > 0) {
+        ESP_LOGI(__func__, "HTTP: Received: '%s'", http.getString().c_str());
+        Display.printf("%d\n", httpCode);
+    } else {
+        Display.printf("error: %s\n", http.errorToString(httpCode).c_str());
+    }
+
+    http.end();
 }
 
 
@@ -96,7 +134,7 @@ void setup()
 
 void loop()
 {
-    bool wifi_available = strlen(WIFI_SSID) > 0;
+    bool wifi_available = strlen(WIFI_SSID) > 0 && strlen(HTTP_UPDATE_URL) > 0;
 
     PRINT_MEMORY_STATS();
 
@@ -118,9 +156,12 @@ void loop()
 
         if (WiFi.status() == WL_CONNECTED) {
             ESP_LOGI(__func__, "WiFi: Connected to: '%s' with IP %s", WIFI_SSID, WiFi.localIP().toString().c_str());
-            Display.printf("\nConnected!\nIP: %s", WiFi.localIP().toString().c_str());
+
+            Display.clear();
+            Display.printf("Wifi connected!\nIP: %s\n", WiFi.localIP().toString().c_str());
 
             // Now do the HTTP Request
+            httpRequest();
         }
         else {
             ESP_LOGW(__func__, "WiFi: Failed to connect to: '%s'", WIFI_SSID);
