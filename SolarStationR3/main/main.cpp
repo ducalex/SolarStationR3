@@ -15,6 +15,7 @@
 RTC_DATA_ATTR static uint32_t wake_count = 0;
 RTC_DATA_ATTR static uint32_t boot_time = 0;
 RTC_DATA_ATTR static uint32_t start_time = 0;
+RTC_DATA_ATTR static uint32_t last_http_update = 0;
 
 #define _debug ESP_ERROR_CHECK_WITHOUT_ABORT
 #define PRINT_MEMORY_STATS() { \
@@ -37,8 +38,8 @@ static void hibernate()
     pinMode(PERIPH_POWER_PIN_2, INPUT_PULLDOWN);
 
     // Sleep
-    int interval_ms = POLL_INTERVAL * 1000;
-    int sleep_time = interval_ms - (rtc_millis() - start_time);
+    int interval_ms = STATION_POLL_INTERVAL * 1000;
+    int sleep_time = interval_ms - millis();
 
     if (sleep_time < 100) {
         sleep_time = interval_ms > 100 ? interval_ms : 100;
@@ -51,7 +52,7 @@ static void hibernate()
 }
 
 
-void httpRequest()
+static void httpRequest()
 {
     PRINT_MEMORY_STATS();
     ESP_LOGI(__func__, "HTTP: POST request to '%s'...", HTTP_UPDATE_URL);
@@ -87,6 +88,7 @@ void httpRequest()
     }
 
     http.end();
+    last_http_update = rtc_millis();
     PRINT_MEMORY_STATS();
 }
 
@@ -135,28 +137,39 @@ void setup()
 
 void loop()
 {
-    bool wifi_available = strlen(WIFI_SSID) > 0 && strlen(HTTP_UPDATE_URL) > 0;
+    bool wifi_available = strlen(WIFI_SSID) > 0;
+    bool http_available = strlen(HTTP_UPDATE_URL) > 0 && (last_http_update == 0 ||
+                            (rtc_millis() - last_http_update) > HTTP_UPDATE_INTERVAL * 1000);
 
-    if (wifi_available) {
+    if (!wifi_available) {
+        ESP_LOGI(__func__, "WiFi: No configuration");
+        Display.printf("WiFi disabled!\n");
+    }
+    else if (!http_available) {
+        ESP_LOGI(__func__, "Polling sensors");
+        Display.printf("Polling sensors!\n");
+    }
+    else {
         ESP_LOGI(__func__, "WiFi: Connecting to: '%s'...", WIFI_SSID);
-        Display.printf("Connecting to\n %s...", WIFI_SSID);
+        Display.printf("Connecting to\n %s...\n", WIFI_SSID);
 
         esp_log_level_set("wifi", ESP_LOG_WARN); // Wifi driver is *very* verbose
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
         WiFi.setSleep(true);
+    }
 
-        // Read sensors while wifi connects
-        readSensors();
+    // Read sensors while wifi connects
+    readSensors();
+    displaySensors();
 
-        while (WiFi.status() != WL_CONNECTED && (rtc_millis() - start_time) < (POLL_INTERVAL * 1000)) {
-            delay(500);
+    if (wifi_available && http_available) {
+        while (WiFi.status() != WL_CONNECTED && millis() < (STATION_POLL_INTERVAL * 1000)) {
+            WiFi.waitStatusBits(STA_HAS_IP_BIT, 500);
             Display.printf(".");
         }
 
         if (WiFi.status() == WL_CONNECTED) {
             ESP_LOGI(__func__, "WiFi: Connected to: '%s' with IP %s", WIFI_SSID, WiFi.localIP().toString().c_str());
-
-            Display.clear();
             Display.printf("Wifi connected!\nIP: %s\n", WiFi.localIP().toString().c_str());
 
             // Now do the HTTP Request
@@ -168,15 +181,8 @@ void loop()
         }
         WiFi.disconnect(true);
     }
-    else {
-        ESP_LOGI(__func__, "WiFi: No configuration");
-        Display.printf("WiFi disabled!\n");
-        readSensors();
-    }
 
-    // Fill the screen with sensor info and keep it on for a few seconds
-    displaySensors();
-    delay(DISPLAY_TIMEOUT * 1000);
+    delay(DISPLAY_TIMEOUT * 1000 - millis());
 
     // Sleep
     hibernate();

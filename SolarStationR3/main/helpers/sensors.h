@@ -81,7 +81,6 @@ static char *serializeSensors()
 
 static void displaySensors()
 {
-    Display.clear();
     Display.printf("Volt: %.2f %.2f\n", m_battery_Volt.getVal(), m_solar_Volt.getVal());
     Display.printf("Light: %d %d\n", m_lightsensor1_RAW.getVal(), m_lightsensor2_RAW.getVal());
     Display.printf("Temp: %.2f %.2f\n", m_temperature1_C.getVal(), m_temperature2_C.getVal());
