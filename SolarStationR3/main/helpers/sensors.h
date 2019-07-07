@@ -28,6 +28,7 @@ static void readSensors()
         m_humidity1_Pct.add(h);
         ESP_LOGI(__func__, "DHT: %.2f %.2f", t, h);
     } else {
+        // add 0?
         ESP_LOGE(__func__, "DHT sensor not responding");
     }
 
@@ -36,6 +37,7 @@ static void readSensors()
         m_pressure1_kPa.add(p);
         ESP_LOGI(__func__, "BMP: %.2f %.2f", t, p);
     } else {
+        // add 0?
         ESP_LOGE(__func__, "BMP180 sensor not responding");
     }
 

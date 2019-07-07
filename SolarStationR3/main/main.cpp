@@ -7,9 +7,9 @@
 #include "esp_pm.h"
 #include "config.h"
 // Most of these should have their own .cpp file, but I'm lazy :(
+#include "helpers/config.h"
 #include "helpers/display.h"
 #include "helpers/sensors.h"
-#include "helpers/config.h"
 #include "helpers/time.h"
 
 RTC_DATA_ATTR static uint32_t wake_count = 0;
@@ -17,6 +17,7 @@ RTC_DATA_ATTR static uint32_t boot_time = 0;
 RTC_DATA_ATTR static uint32_t start_time = 0;
 RTC_DATA_ATTR static uint32_t last_http_update = 0;
 
+#define _check ESP_ERROR_CHECK
 #define _debug ESP_ERROR_CHECK_WITHOUT_ABORT
 #define PRINT_MEMORY_STATS() { \
   multi_heap_info_t info; \
@@ -182,7 +183,9 @@ void loop()
         WiFi.disconnect(true);
     }
 
-    delay(DISPLAY_TIMEOUT * 1000 - millis());
+    if (Display.isPresent()) {
+        delay(DISPLAY_TIMEOUT * 1000 - millis());
+    }
 
     // Sleep
     hibernate();
