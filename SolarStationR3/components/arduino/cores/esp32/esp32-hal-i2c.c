@@ -25,6 +25,9 @@
 #include "soc/dport_reg.h"
 #include "esp_attr.h"
 #include "esp32-hal-cpu.h" // cpu clock change support 31DEC2018
+#include "esp_pm.h"
+esp_pm_lock_handle_t ls_handle;
+
 //#define I2C_DEV(i)   (volatile i2c_dev_t *)((i)?DR_REG_I2C1_EXT_BASE:DR_REG_I2C_EXT_BASE)
 //#define I2C_DEV(i)   ((i2c_dev_t *)(REG_I2C_BASE(i)))
 #define I2C_SCL_IDX(p)  ((p==0)?I2CEXT0_SCL_OUT_IDX:((p==1)?I2CEXT1_SCL_OUT_IDX:0))
@@ -206,8 +209,8 @@ static i2c_t _i2c_bus_array[2] = {
     {(volatile i2c_dev_t *)(DR_REG_I2C1_EXT_BASE_FIXED), 1, -1, -1,I2C_NONE,I2C_NONE,I2C_ERROR_OK,NULL,NULL,NULL,0,0,0,0,0}
 };
 #else
-#define I2C_MUTEX_LOCK()    do {} while (xSemaphoreTakeRecursive(i2c->lock, portMAX_DELAY) != pdPASS)
-#define I2C_MUTEX_UNLOCK()  xSemaphoreGiveRecursive(i2c->lock)
+#define I2C_MUTEX_LOCK()    {esp_pm_lock_acquire(ls_handle);do {} while (xSemaphoreTakeRecursive(i2c->lock, portMAX_DELAY) != pdPASS);}
+#define I2C_MUTEX_UNLOCK()  {esp_pm_lock_release(ls_handle);xSemaphoreGiveRecursive(i2c->lock);}
 
 static i2c_t _i2c_bus_array[2] = {
     {(volatile i2c_dev_t *)(DR_REG_I2C_EXT_BASE_FIXED), NULL, 0, -1, -1, I2C_NONE,I2C_NONE,I2C_ERROR_OK,NULL,NULL,NULL,0,0,0,0,0,0},
@@ -1480,6 +1483,7 @@ i2c_err_t i2cDetachSDA(i2c_t * i2c, int8_t sda)
  * */
 // 24Nov17 only supports Master Mode
 i2c_t * i2cInit(uint8_t i2c_num, int8_t sda, int8_t scl, uint32_t frequency) {
+    esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "i2c", &ls_handle);
 #ifdef ENABLE_I2C_DEBUG_BUFFER
   log_v("num=%d sda=%d scl=%d freq=%d",i2c_num, sda, scl, frequency);
 #endif

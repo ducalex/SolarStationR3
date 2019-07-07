@@ -111,13 +111,11 @@ void setup()
     digitalWrite(PERIPH_POWER_PIN_2, HIGH);
     delay(10); // Wait for peripherals to stabilize
 
-    /* This seems to interfer with Arduino I2C
     esp_pm_config_esp32_t pm_config;
-        pm_config.max_freq_mhz = 240;
-        pm_config.min_freq_mhz = 240; // 40
+        pm_config.max_freq_mhz = 160;
+        pm_config.min_freq_mhz = 160; // 40
         pm_config.light_sleep_enable = true;
     esp_pm_configure(&pm_config);
-    */
 
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     Display.begin();
@@ -178,8 +176,6 @@ void loop()
 
     // Fill the screen with sensor info and keep it on for a few seconds
     displaySensors();
-    //esp_sleep_enable_timer_wakeup(DISPLAY_TIMEOUT * 1000);
-    //esp_light_sleep_start();
     delay(DISPLAY_TIMEOUT * 1000);
 
     // Sleep
