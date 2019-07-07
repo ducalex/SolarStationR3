@@ -48,7 +48,7 @@ void loadConfiguration()
     config.getString("http.update_username", (char*)"", HTTP_UPDATE_USERNAME);
     config.getString("http.update_password", (char*)"", HTTP_UPDATE_PASSWORD);
     config.getInteger("http.update_timeout", 30, &HTTP_UPDATE_TIMEOUT);
-    config.getInteger("poll.interval", 30, &POLL_INTERVAL);
+    config.getInteger("poll.interval", 60, &POLL_INTERVAL);
     config.getInteger("poll.method", 0, &POLL_METHOD);
     config.getInteger("display.timeout", 5, &DISPLAY_TIMEOUT);
 

@@ -26,6 +26,8 @@ RTC_DATA_ATTR static uint32_t start_time = 0;
 
 static void hibernate()
 {
+    PRINT_MEMORY_STATS();
+
     // Cleanup
     Display.end();
     SD.end();
@@ -45,13 +47,13 @@ static void hibernate()
 
     ESP_LOGI(__func__, "Sleeping for %dms", sleep_time);
     esp_sleep_enable_timer_wakeup(sleep_time * 1000);
-    //esp_light_sleep_start();
     esp_deep_sleep_start();
 }
 
 
 void httpRequest()
 {
+    PRINT_MEMORY_STATS();
     ESP_LOGI(__func__, "HTTP: POST request to '%s'...", HTTP_UPDATE_URL);
     Display.printf("HTTP: POST...");
 
@@ -85,6 +87,7 @@ void httpRequest()
     }
 
     http.end();
+    PRINT_MEMORY_STATS();
 }
 
 
@@ -136,11 +139,9 @@ void loop()
 {
     bool wifi_available = strlen(WIFI_SSID) > 0 && strlen(HTTP_UPDATE_URL) > 0;
 
-    PRINT_MEMORY_STATS();
-
     if (wifi_available) {
         ESP_LOGI(__func__, "WiFi: Connecting to: '%s'...", WIFI_SSID);
-        Display.printf("Connecting to %s...", WIFI_SSID);
+        Display.printf("Connecting to\n %s...", WIFI_SSID);
 
         esp_log_level_set("wifi", ESP_LOG_WARN); // Wifi driver is *very* verbose
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -167,8 +168,6 @@ void loop()
             ESP_LOGW(__func__, "WiFi: Failed to connect to: '%s'", WIFI_SSID);
             Display.printf("\nFailed!");
         }
-        PRINT_MEMORY_STATS();
-
         WiFi.disconnect(true);
     }
     else {
@@ -178,6 +177,9 @@ void loop()
     }
 
     // Fill the screen with sensor info and keep it on for a few seconds
+    displaySensors();
+    //esp_sleep_enable_timer_wakeup(DISPLAY_TIMEOUT * 1000);
+    //esp_light_sleep_start();
     delay(DISPLAY_TIMEOUT * 1000);
 
     // Sleep
