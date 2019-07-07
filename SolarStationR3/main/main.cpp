@@ -5,6 +5,9 @@
 #include "SD.h"
 #include "esp_log.h"
 #include "esp_pm.h"
+#include "esp_partition.h"
+#include "esp_ota_ops.h"
+#include "esp_system.h"
 #include "config.h"
 // Most of these should have their own .cpp file, but I'm lazy :(
 #include "helpers/config.h"
@@ -50,6 +53,75 @@ static void hibernate()
     ESP_LOGI(__func__, "Sleeping for %dms", sleep_time);
     esp_sleep_enable_timer_wakeup(sleep_time * 1000);
     esp_deep_sleep_start();
+}
+
+
+static void firmware_upgrade(const char *file)
+{
+    const esp_partition_t *factory = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
+    const esp_partition_t *target = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+    const esp_partition_t *current = esp_ota_get_running_partition();
+
+    if (current->address != factory->address) {
+        // As we have a single OTA, we can only flash from factory. We reboot to it.
+        ESP_LOGI(__func__, "Rebooting to factory image");
+        esp_ota_set_boot_partition(factory);
+        esp_restart();
+    }
+
+    // Danger zone
+    assert(target != NULL);
+
+    ESP_LOGI(__func__, "Flashing file %s to 0x%x", file, target->address);
+
+    FILE *fp = fopen(file, "r+");
+    if (fp == NULL) {
+        ESP_LOGE(__func__, "Unable to open file!");
+        return;
+    }
+
+    Display.clear();
+    Display.printf("Upgrading firmware...\n");
+
+    void *buffer = malloc(16 * 1024);
+    esp_ota_handle_t ota;
+    esp_err_t err;
+    size_t size, count = 0;
+
+    err = esp_ota_begin(target, OTA_SIZE_UNKNOWN, &ota);
+    if (err != ESP_OK) goto finish;
+
+    while ((size = fread(buffer, 1, 16 * 1024, fp)) > 0) {
+        err = esp_ota_write(ota, buffer, size);
+        if (err != ESP_OK) goto finish;
+        Display.printf(count++ % 22 ? "." : "\n");
+    }
+
+    err = esp_ota_end(ota);
+    if (err != ESP_OK) goto finish;
+
+    err = esp_ota_set_boot_partition(target);
+    if (err != ESP_OK) goto finish;
+
+  finish:
+    fclose(fp);
+    free(buffer);
+    if (err == ESP_OK) {
+        // Rename file after successful install
+        char new_name[64];
+        strcpy(new_name, file);
+        new_name[strlen(new_name)-4] = 0;
+        strcat(new_name, "_installed.bin");
+        unlink(new_name);
+        rename(file, new_name);
+
+        Display.printf("\n\nComplete!\n\nPlease press reset.");
+        ESP_LOGI(__func__, "Firmware successfully flashed!");
+    } else {
+        ESP_LOGE(__func__, "Firmware upgrade failed: %s", esp_err_to_name(err));
+        Display.printf("\n\nFailed!\n\n%s\nPlease press reset.", esp_err_to_name(err));
+    }
+    vTaskDelete(NULL);
 }
 
 
@@ -133,6 +205,10 @@ void setup()
 
     ESP_LOGI(__func__, "Station name: %s", STATION_NAME);
     Display.printf("# %s #\n\n", STATION_NAME);
+
+    if (access("/sd/firmware.bin", F_OK) != -1) {
+        firmware_upgrade("/sd/firmware.bin");
+    }
 }
 
 

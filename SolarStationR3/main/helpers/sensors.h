@@ -14,9 +14,9 @@ static RTC_DATA_ATTR AVGr m_humidity1_Pct(12);
 static RTC_DATA_ATTR AVGr m_humidity2_Pct(12);
 static RTC_DATA_ATTR AVGr m_pressure1_kPa(12);
 static RTC_DATA_ATTR AVGr m_pressure2_kPa(12);
-static RTC_DATA_ATTR AVGr m_windSpeed_kmh(12);
-static RTC_DATA_ATTR AVGr m_windDirection_deg(12);
-static RTC_DATA_ATTR AVGr m_rain_RAW(12);
+static RTC_DATA_ATTR AVGr m_windSpeed_kmh(2);
+static RTC_DATA_ATTR AVGr m_windDirection_deg(2);
+static RTC_DATA_ATTR AVGr m_rain_RAW(2);
 
 static void readSensors()
 {
