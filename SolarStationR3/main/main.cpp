@@ -20,8 +20,6 @@ RTC_DATA_ATTR static uint32_t boot_time = 0;
 RTC_DATA_ATTR static uint32_t start_time = 0;
 RTC_DATA_ATTR static uint32_t last_http_update = 0;
 
-#define _check ESP_ERROR_CHECK
-#define _debug ESP_ERROR_CHECK_WITHOUT_ABORT
 #define PRINT_MEMORY_STATS() { \
   multi_heap_info_t info; \
   heap_caps_get_info(&info, MALLOC_CAP_DEFAULT); \
@@ -45,8 +43,8 @@ static void hibernate()
     int interval_ms = STATION_POLL_INTERVAL * 1000;
     int sleep_time = interval_ms - millis();
 
-    if (sleep_time < 100) {
-        sleep_time = interval_ms > 100 ? interval_ms : 100;
+    if (sleep_time < 1000) {
+        sleep_time = interval_ms > 1000 ? interval_ms : 1000;
         ESP_LOGW(__func__, "Bogus sleep time, did we spend too much time processing?");
     }
 
@@ -127,7 +125,6 @@ static void firmware_upgrade(const char *file)
 
 static void httpRequest()
 {
-    PRINT_MEMORY_STATS();
     ESP_LOGI(__func__, "HTTP: POST request to '%s'...", HTTP_UPDATE_URL);
     Display.printf("HTTP: POST...");
 
@@ -161,8 +158,8 @@ static void httpRequest()
     }
 
     http.end();
-    last_http_update = rtc_millis();
-    PRINT_MEMORY_STATS();
+    //last_http_update = rtc_millis();
+    last_http_update = start_time;
 }
 
 
@@ -216,7 +213,7 @@ void loop()
 {
     bool wifi_available = strlen(WIFI_SSID) > 0;
     bool http_available = strlen(HTTP_UPDATE_URL) > 0 && (last_http_update == 0 ||
-                            (rtc_millis() - last_http_update) > HTTP_UPDATE_INTERVAL * 1000);
+                            (start_time - last_http_update) >= HTTP_UPDATE_INTERVAL * 1000);
 
     if (!wifi_available) {
         ESP_LOGI(__func__, "WiFi: No configuration");

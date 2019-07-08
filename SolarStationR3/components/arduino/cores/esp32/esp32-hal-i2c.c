@@ -201,16 +201,16 @@ enum {
 };
 
 #if CONFIG_DISABLE_HAL_LOCKS
-#define I2C_MUTEX_LOCK()
-#define I2C_MUTEX_UNLOCK()
+#define I2C_MUTEX_LOCK() {esp_pm_lock_acquire(ls_handle);}
+#define I2C_MUTEX_UNLOCK() {esp_pm_lock_release(ls_handle);}
 
 static i2c_t _i2c_bus_array[2] = {
     {(volatile i2c_dev_t *)(DR_REG_I2C_EXT_BASE_FIXED), 0, -1, -1,I2C_NONE,I2C_NONE,I2C_ERROR_OK,NULL,NULL,NULL,0,0,0,0,0},
     {(volatile i2c_dev_t *)(DR_REG_I2C1_EXT_BASE_FIXED), 1, -1, -1,I2C_NONE,I2C_NONE,I2C_ERROR_OK,NULL,NULL,NULL,0,0,0,0,0}
 };
 #else
-#define I2C_MUTEX_LOCK()    {esp_pm_lock_acquire(ls_handle);do {} while (xSemaphoreTakeRecursive(i2c->lock, portMAX_DELAY) != pdPASS);}
-#define I2C_MUTEX_UNLOCK()  {esp_pm_lock_release(ls_handle);xSemaphoreGiveRecursive(i2c->lock);}
+#define I2C_MUTEX_LOCK()    {do {} while (xSemaphoreTakeRecursive(i2c->lock, portMAX_DELAY) != pdPASS);esp_pm_lock_acquire(ls_handle);}
+#define I2C_MUTEX_UNLOCK()  {xSemaphoreGiveRecursive(i2c->lock);esp_pm_lock_release(ls_handle);}
 
 static i2c_t _i2c_bus_array[2] = {
     {(volatile i2c_dev_t *)(DR_REG_I2C_EXT_BASE_FIXED), NULL, 0, -1, -1, I2C_NONE,I2C_NONE,I2C_ERROR_OK,NULL,NULL,NULL,0,0,0,0,0,0},
