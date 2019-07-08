@@ -185,7 +185,7 @@ void setup()
 
     esp_pm_config_esp32_t pm_config;
         pm_config.max_freq_mhz = 160;
-        pm_config.min_freq_mhz = 160; // 40
+        pm_config.min_freq_mhz = 160;
         pm_config.light_sleep_enable = true;
     esp_pm_configure(&pm_config);
 
