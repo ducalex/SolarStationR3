@@ -36,6 +36,9 @@ I suggest (pseudo-C):
 
 When the ESP32 wakes up it can simply read top_rotations to get the top speed while it was sleeping
 
+This seems to be doing exactly that: https://github.com/espressif/esp-idf/tree/master/examples/system/ulp
+Very nice!
+
 
 
 
