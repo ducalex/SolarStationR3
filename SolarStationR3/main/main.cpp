@@ -20,6 +20,7 @@ RTC_DATA_ATTR static uint32_t boot_time = 0;
 RTC_DATA_ATTR static uint32_t start_time = 0;
 RTC_DATA_ATTR static uint32_t last_http_update = 0;
 
+#define ls_delay(ms) esp_sleep_enable_timer_wakeup((ms) * 1000); esp_light_sleep_start();
 #define PRINT_MEMORY_STATS() { \
   multi_heap_info_t info; \
   heap_caps_get_info(&info, MALLOC_CAP_DEFAULT); \
@@ -183,11 +184,12 @@ void setup()
     digitalWrite(PERIPH_POWER_PIN_2, HIGH);
     delay(10); // Wait for peripherals to stabilize
 
-    esp_pm_config_esp32_t pm_config;
-        pm_config.max_freq_mhz = 160;
-        pm_config.min_freq_mhz = 160;
-        pm_config.light_sleep_enable = true;
-    esp_pm_configure(&pm_config);
+    // Causes random crashes with wifi (once in every 50 boots or so)
+    // esp_pm_config_esp32_t pm_config;
+    //     pm_config.max_freq_mhz = 160;
+    //     pm_config.min_freq_mhz = 160;
+    //     pm_config.light_sleep_enable = true;
+    // esp_pm_configure(&pm_config);
 
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     Display.begin();
@@ -257,7 +259,7 @@ void loop()
     }
 
     if (Display.isPresent()) {
-        delay(DISPLAY_TIMEOUT * 1000 - millis());
+        ls_delay(DISPLAY_TIMEOUT * 1000 - millis());
     }
 
     // Sleep
