@@ -44,7 +44,7 @@ void loadConfiguration()
     // cJSON has a weird handling of NULL, it's better to pass an empty string if we
     // want keys to appear in the config file
     config.getString("station.name", (char*)"SolarStationR3", STATION_NAME);
-    config.getInteger("station.poll_interval", 30, &STATION_POLL_INTERVAL);
+    config.getInteger("station.poll_interval", 60, &STATION_POLL_INTERVAL);
     config.getInteger("station.power_saving", 0, &STATION_POWER_SAVING);
     config.getString("wifi.ssid", (char*)"", WIFI_SSID);
     config.getString("wifi.password", (char*)"", WIFI_PASSWORD);
@@ -52,8 +52,8 @@ void loadConfiguration()
     config.getString("http.update_username", (char*)"", HTTP_UPDATE_USERNAME);
     config.getString("http.update_password", (char*)"", HTTP_UPDATE_PASSWORD);
     config.getInteger("http.update_timeout", 30, &HTTP_UPDATE_TIMEOUT);
-    config.getInteger("http.update_interval", 60, &HTTP_UPDATE_INTERVAL);
-    config.getInteger("display.timeout", 5, &DISPLAY_TIMEOUT);
+    config.getInteger("http.update_interval", 300, &HTTP_UPDATE_INTERVAL);
+    config.getInteger("display.timeout", 10, &DISPLAY_TIMEOUT);
 
     saveConfiguration(true);
 }

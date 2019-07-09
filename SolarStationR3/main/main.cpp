@@ -15,10 +15,19 @@
 #include "helpers/sensors.h"
 #include "helpers/time.h"
 
+#define HTTP_QUEUE_MAX_ITEMS 10
+typedef struct {
+    uint32_t timestamp;
+    uint32_t wake_count;
+    char sensors_data[300];
+} http_item_t;
+
 RTC_DATA_ATTR static uint32_t wake_count = 0;
 RTC_DATA_ATTR static uint32_t boot_time = 0;
 RTC_DATA_ATTR static uint32_t start_time = 0;
 RTC_DATA_ATTR static uint32_t last_http_update = 0;
+RTC_DATA_ATTR static http_item_t http_queue[HTTP_QUEUE_MAX_ITEMS];
+RTC_DATA_ATTR static uint16_t http_queue_pos;
 
 #define ls_delay(ms) esp_sleep_enable_timer_wakeup((ms) * 1000); esp_light_sleep_start();
 #define PRINT_MEMORY_STATS() { \
@@ -129,36 +138,52 @@ static void httpRequest()
     ESP_LOGI(__func__, "HTTP: POST request to '%s'...", HTTP_UPDATE_URL);
     Display.printf("HTTP: POST...");
 
-    HTTPClient http;
-
-    http.begin(HTTP_UPDATE_URL);
-    http.setTimeout(HTTP_UPDATE_TIMEOUT * 1000);
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-    if (strlen(HTTP_UPDATE_USERNAME) > 0) {
-        http.setAuthorization(HTTP_UPDATE_USERNAME, HTTP_UPDATE_PASSWORD);
-    }
-
+    short count = 0;
     char payload[512];
-    char *sensors_data = serializeSensors();
 
-    sprintf(payload, "station=%s&ps=%d&uptime=%d&cycles=%d" "&%s",
-        STATION_NAME, 0, (rtc_millis() - boot_time) / 1000, wake_count, sensors_data);
+    for (int i = 0; i < HTTP_QUEUE_MAX_ITEMS; i++) {
+        http_item_t *item = &http_queue[i];
 
-    free(sensors_data);
+        if (item->timestamp == 0) { // Empty entry
+            continue;
+        }
 
-    ESP_LOGI(__func__, "HTTP: Sending: '%s'", payload);
+        count++;
 
-    int httpCode = http.POST(payload);
-    ESP_LOGI(__func__, "HTTP: Return code: %d", httpCode);
+        HTTPClient http; // I don't know if it is reusable
 
-    if (httpCode > 0) {
-        ESP_LOGI(__func__, "HTTP: Received: '%s'", http.getString().c_str());
-        Display.printf("%d\n", httpCode);
-    } else {
-        Display.printf("error: %s\n", http.errorToString(httpCode).c_str());
+        http.begin(HTTP_UPDATE_URL);
+        http.setTimeout(HTTP_UPDATE_TIMEOUT * 1000);
+        http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+        if (strlen(HTTP_UPDATE_USERNAME) > 0) {
+            http.setAuthorization(HTTP_UPDATE_USERNAME, HTTP_UPDATE_PASSWORD);
+        }
+
+        sprintf(payload, "station=%s&ps=%d&uptime=%d&offset=%d&cycles=%d" "&%s",
+            STATION_NAME,                 // Current station name
+            0,                            // Current power saving mode
+            start_time - boot_time,       // Current uptime (ms)
+            item->timestamp - start_time, // Age of entry relative to now (ms)
+            item->wake_count,             // Wake count at time of capture
+            item->sensors_data            // Sensors data at time of capture
+        );
+
+        ESP_LOGI(__func__, "HTTP(%d): Sending: '%s'", count, payload);
+
+        int httpCode = http.POST(payload);
+        ESP_LOGI(__func__, "HTTP(%d): Return code: %d", count, httpCode);
+
+        if (httpCode > 0) {
+            ESP_LOGI(__func__, "HTTP(%d): Received: '%s'", count, http.getString().c_str());
+            Display.printf("%d\n", httpCode);
+        } else {
+            Display.printf("error: %s\n", http.errorToString(httpCode).c_str());
+        }
+
+        http.end();
+        memset(item, 0, sizeof(http_item_t)); // Or do it only on success?
     }
 
-    http.end();
     //last_http_update = rtc_millis();
     last_http_update = start_time;
 }
@@ -238,6 +263,14 @@ void loop()
     readSensors();
     displaySensors();
 
+    // Feed the http queue
+    http_item_t *item = &http_queue[http_queue_pos];
+    item->timestamp = start_time;
+    item->wake_count = wake_count;
+    serializeSensors((char*)&item->sensors_data);
+    http_queue_pos = (http_queue_pos + 1) % HTTP_QUEUE_MAX_ITEMS;
+
+    // Now do the http request!
     if (wifi_available && http_available) {
         while (WiFi.status() != WL_CONNECTED && millis() < (STATION_POLL_INTERVAL * 1000)) {
             WiFi.waitStatusBits(STA_HAS_IP_BIT, 500);

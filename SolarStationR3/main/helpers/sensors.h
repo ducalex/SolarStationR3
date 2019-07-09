@@ -50,10 +50,12 @@ static void readSensors()
 }
 
 
-static char *serializeSensors()
+static char *serializeSensors(char *outBuffer = NULL)
 {
-    char buffer[512] = {0};
-    sprintf(buffer,
+    if (outBuffer == NULL) {
+        outBuffer = (char*)malloc(512);
+    }
+    sprintf(outBuffer,
         "&bat=%.4f"
         "&sol=%.4f"
         "&l1=%.4f"
@@ -76,7 +78,7 @@ static char *serializeSensors()
         m_pressure2_kPa.getAvg()
     );
 
-    return strdup(buffer);
+    return outBuffer;
 }
 
 
