@@ -18,7 +18,21 @@ static RTC_DATA_ATTR AVGr m_windSpeed_kmh(2);
 static RTC_DATA_ATTR AVGr m_windDirection_deg(2);
 static RTC_DATA_ATTR AVGr m_rain_RAW(2);
 
-static void readSensors()
+typedef struct {
+    float battery_Volt;
+    float solar_Volt;
+    float lightsensor1_RAW;
+    float lightsensor2_RAW;
+    float temperature1_C;
+    float temperature2_C;
+    float humidity1_Pct;
+    float humidity2_Pct;
+    float pressure1_kPa;
+    float pressure2_kPa;
+} sensors_data_t;
+
+
+static void pollSensors()
 {
     Adafruit_ADS1115 ads;
     float t = 0, h = 0, p = 0;
@@ -50,11 +64,40 @@ static void readSensors()
 }
 
 
-static char *serializeSensors(char *outBuffer = NULL)
+static sensors_data_t readSensors(bool getCurrentValue = false)
 {
-    if (outBuffer == NULL) {
-        outBuffer = (char*)malloc(512);
+    sensors_data_t out_frame;
+
+    if (getCurrentValue) {
+        out_frame.battery_Volt = m_battery_Volt.getVal();
+        out_frame.solar_Volt = m_solar_Volt.getVal();
+        out_frame.lightsensor1_RAW = m_lightsensor1_RAW.getVal();
+        out_frame.lightsensor2_RAW = m_lightsensor2_RAW.getVal();
+        out_frame.temperature1_C = m_temperature1_C.getVal();
+        out_frame.temperature2_C = m_temperature2_C.getVal();
+        out_frame.humidity1_Pct = m_humidity1_Pct.getVal();
+        out_frame.humidity2_Pct = m_humidity2_Pct.getVal();
+        out_frame.pressure1_kPa = m_pressure1_kPa.getVal();
+        out_frame.pressure2_kPa = m_pressure2_kPa.getVal();
+    } else {
+        out_frame.battery_Volt = m_battery_Volt.getAvg();
+        out_frame.solar_Volt = m_solar_Volt.getAvg();
+        out_frame.lightsensor1_RAW = m_lightsensor1_RAW.getAvg();
+        out_frame.lightsensor2_RAW = m_lightsensor2_RAW.getAvg();
+        out_frame.temperature1_C = m_temperature1_C.getAvg();
+        out_frame.temperature2_C = m_temperature2_C.getAvg();
+        out_frame.humidity1_Pct = m_humidity1_Pct.getAvg();
+        out_frame.humidity2_Pct = m_humidity2_Pct.getAvg();
+        out_frame.pressure1_kPa = m_pressure1_kPa.getAvg();
+        out_frame.pressure2_kPa = m_pressure2_kPa.getAvg();
     }
+
+    return out_frame;
+}
+
+
+static void serializeSensors(sensors_data_t frame, char *outBuffer = NULL)
+{
     sprintf(outBuffer,
         "&bat=%.4f"
         "&sol=%.4f"
@@ -66,28 +109,31 @@ static char *serializeSensors(char *outBuffer = NULL)
         "&h2=%.4f"
         "&p1=%.4f"
         "&p2=%.4f",
-        m_battery_Volt.getAvg(),
-        m_solar_Volt.getAvg(),
-        m_lightsensor1_RAW.getAvg(),
-        m_lightsensor2_RAW.getAvg(),
-        m_temperature1_C.getAvg(),
-        m_temperature2_C.getAvg(),
-        m_humidity1_Pct.getAvg(),
-        m_humidity2_Pct.getAvg(),
-        m_pressure1_kPa.getAvg(),
-        m_pressure2_kPa.getAvg()
+        frame.battery_Volt,
+        frame.solar_Volt,
+        frame.lightsensor1_RAW,
+        frame.lightsensor2_RAW,
+        frame.temperature1_C,
+        frame.temperature2_C,
+        frame.humidity1_Pct,
+        frame.humidity2_Pct,
+        frame.pressure1_kPa,
+        frame.pressure2_kPa
     );
-
-    return outBuffer;
 }
 
+
+static void displaySensors(sensors_data_t frame)
+{
+    Display.printf("Volt: %.2f %.2f\n", frame.battery_Volt, frame.solar_Volt);
+    Display.printf("Light: %d %d\n", frame.lightsensor1_RAW, frame.lightsensor2_RAW);
+    Display.printf("Temp: %.2f %.2f\n", frame.temperature1_C, frame.temperature2_C);
+    Display.printf("Humidity: %.0f %.0f\n", frame.humidity1_Pct, frame.humidity2_Pct);
+    Display.printf("Pressure: %.2f %.2f\n", frame.pressure1_kPa, frame.pressure2_kPa);
+}
 
 
 static void displaySensors()
 {
-    Display.printf("Volt: %.2f %.2f\n", m_battery_Volt.getVal(), m_solar_Volt.getVal());
-    Display.printf("Light: %d %d\n", m_lightsensor1_RAW.getVal(), m_lightsensor2_RAW.getVal());
-    Display.printf("Temp: %.2f %.2f\n", m_temperature1_C.getVal(), m_temperature2_C.getVal());
-    Display.printf("Humidity: %.0f %.0f\n", m_humidity1_Pct.getVal(), m_humidity2_Pct.getVal());
-    Display.printf("Pressure: %.2f %.2f\n", m_pressure1_kPa.getVal(), m_pressure2_kPa.getVal());
+    displaySensors(readSensors());
 }

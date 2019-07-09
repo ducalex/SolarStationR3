@@ -15,11 +15,11 @@
 #include "helpers/sensors.h"
 #include "helpers/time.h"
 
-#define HTTP_QUEUE_MAX_ITEMS 10
+#define HTTP_QUEUE_MAX_ITEMS 60
 typedef struct {
     uint32_t timestamp;
     uint32_t wake_count;
-    char sensors_data[300];
+    sensors_data_t sensors_data;
 } http_item_t;
 
 RTC_DATA_ATTR static uint32_t wake_count = 0;
@@ -140,6 +140,7 @@ static void httpRequest()
 
     short count = 0;
     char payload[512];
+    char sensors_data[512];
 
     for (int i = 0; i < HTTP_QUEUE_MAX_ITEMS; i++) {
         http_item_t *item = &http_queue[i];
@@ -159,13 +160,15 @@ static void httpRequest()
             http.setAuthorization(HTTP_UPDATE_USERNAME, HTTP_UPDATE_PASSWORD);
         }
 
+        serializeSensors(item->sensors_data, sensors_data);
+
         sprintf(payload, "station=%s&ps=%d&uptime=%d&offset=%d&cycles=%d" "&%s",
             STATION_NAME,                 // Current station name
             0,                            // Current power saving mode
             start_time - boot_time,       // Current uptime (ms)
             item->timestamp - start_time, // Age of entry relative to now (ms)
             item->wake_count,             // Wake count at time of capture
-            item->sensors_data            // Sensors data at time of capture
+            sensors_data                  // Sensors data at time of capture
         );
 
         ESP_LOGI(__func__, "HTTP(%d): Sending: '%s'", count, payload);
@@ -259,15 +262,15 @@ void loop()
         WiFi.setSleep(true);
     }
 
-    // Read sensors while wifi connects
-    readSensors();
+    // Poll sensors while wifi connects
+    pollSensors();
     displaySensors();
 
-    // Feed the http queue
+    // Add sensors data to HTTP queue
     http_item_t *item = &http_queue[http_queue_pos];
     item->timestamp = start_time;
     item->wake_count = wake_count;
-    serializeSensors((char*)&item->sensors_data);
+    item->sensors_data = readSensors();
     http_queue_pos = (http_queue_pos + 1) % HTTP_QUEUE_MAX_ITEMS;
 
     // Now do the http request!
