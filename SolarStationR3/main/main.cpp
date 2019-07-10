@@ -275,7 +275,7 @@ void loop()
 
     // Now do the http request!
     if (wifi_available && http_available) {
-        while (WiFi.status() != WL_CONNECTED && millis() < (STATION_POLL_INTERVAL * 1000)) {
+        while (WiFi.status() != WL_CONNECTED && millis() < (WIFI_TIMEOUT * 1000)) {
             WiFi.waitStatusBits(STA_HAS_IP_BIT, 500);
             Display.printf(".");
         }
@@ -295,7 +295,7 @@ void loop()
     }
 
     if (Display.isPresent()) {
-        ls_delay(DISPLAY_TIMEOUT * 1000 - millis());
+        ls_delay(STATION_DISPLAY_TIMEOUT * 1000 - millis());
     }
 
     // Sleep
