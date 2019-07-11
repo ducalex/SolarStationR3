@@ -34,6 +34,7 @@
 #include "rom/rtc.h"
 #include "esp_task_wdt.h"
 #include "esp32-hal.h"
+#include "unistd.h"
 
 //Undocumented!!! Get chip temperature in Farenheit
 //Source: https://github.com/pcbreflux/espressif/blob/master/esp32/arduino/sketchbook/ESP32_int_temp_sensor/ESP32_int_temp_sensor.ino
@@ -141,7 +142,8 @@ unsigned long IRAM_ATTR millis()
 
 void delay(uint32_t ms)
 {
-    vTaskDelay(ms / portTICK_PERIOD_MS);
+    usleep(ms * 1000);
+    //vTaskDelay(ms / portTICK_PERIOD_MS);
 }
 
 void IRAM_ATTR delayMicroseconds(uint32_t us)
@@ -199,6 +201,7 @@ void initArduino()
 #if CONFIG_SPIRAM_SUPPORT
     psramInit();
 #endif
+/*
     esp_log_level_set("*", CONFIG_LOG_DEFAULT_LEVEL);
     esp_err_t err = nvs_flash_init();
     if(err == ESP_ERR_NVS_NO_FREE_PAGES){
@@ -215,6 +218,7 @@ void initArduino()
     if(err) {
         log_e("Failed to initialize NVS! Error: %u", err);
     }
+*/
 #ifdef CONFIG_BT_ENABLED
     if(!btInUse()){
         esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
