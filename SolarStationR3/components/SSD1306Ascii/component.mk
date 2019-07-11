@@ -7,7 +7,5 @@
 # please read the SDK documents if you need to do this.
 #
 
-COMPONENT_SRCDIRS = src
-
-#include $(IDF_PATH)/make/component_common.mk
-
+COMPONENT_SRCDIRS := src
+COMPONENT_ADD_INCLUDEDIRS := src

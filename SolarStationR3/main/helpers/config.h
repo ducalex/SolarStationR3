@@ -72,8 +72,8 @@ void loadConfiguration()
     config.getInteger("http.update_timeout", 30, &HTTP_UPDATE_TIMEOUT);
     config.getInteger("http.update_interval", 300, &HTTP_UPDATE_INTERVAL);
 
-    config.getDouble("power.http_low_battery_treshold", 3.60, &POWER_POLL_LOW_VBAT_TRESHOLD);
-    config.getDouble("power.poll_low_battery_treshold", 3.30, &POWER_HTTP_LOW_VBAT_TRESHOLD);
+    config.getDouble("power.http_low_battery_treshold", 3.70, &POWER_POLL_LOW_VBAT_TRESHOLD);
+    config.getDouble("power.poll_low_battery_treshold", 3.50, &POWER_HTTP_LOW_VBAT_TRESHOLD);
     config.getDouble("power.vbat_multiplier", 2.00, &POWER_VBAT_MULTIPLIER);
 
     saveConfiguration(true);
