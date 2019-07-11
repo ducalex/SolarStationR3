@@ -27,14 +27,25 @@ RTC_DATA_ATTR static uint32_t boot_time = 0;
 RTC_DATA_ATTR static uint32_t start_time = 0;
 RTC_DATA_ATTR static uint32_t last_http_update = 0;
 RTC_DATA_ATTR static http_item_t http_queue[HTTP_QUEUE_MAX_ITEMS];
-RTC_DATA_ATTR static uint16_t http_queue_pos;
+RTC_DATA_ATTR static uint16_t http_queue_pos = 0;
 
-#define ls_delay(ms) esp_sleep_enable_timer_wakeup((ms) * 1000); esp_light_sleep_start();
+static uint32_t e_poll_interval; // Effective interval. Normally = STATION_POLL_INTERVAL
+static uint32_t e_http_interval; // Effective interval. Normally = HTTP_UPDATE_INTERVAL
+
+#define POWER_SAVE_INTERVAL(interval, th, vb) (((float)th <= vb || vb < 2) ? interval : (uint)ceil(((th-vb) * 100.00) * interval))
 #define PRINT_MEMORY_STATS() { \
   multi_heap_info_t info; \
   heap_caps_get_info(&info, MALLOC_CAP_DEFAULT); \
   ESP_LOGI("Memory", "Memory: Used: %d KB   Free: %d KB", \
         info.total_allocated_bytes / 1024, info.total_free_bytes / 1024); }
+
+
+static void ls_delay(uint32_t ms)
+{
+    fflush(stdout);    // Flush serial and SD card buffers before going to sleep
+    esp_sleep_enable_timer_wakeup((ms) * 1000);
+    esp_light_sleep_start();
+}
 
 
 static void hibernate()
@@ -50,7 +61,7 @@ static void hibernate()
     pinMode(PERIPH_POWER_PIN_2, INPUT_PULLDOWN);
 
     // Sleep
-    int interval_ms = STATION_POLL_INTERVAL * 1000;
+    int interval_ms = e_poll_interval * 1000;
     int sleep_time = interval_ms - millis();
 
     if (sleep_time < 1000) {
@@ -60,6 +71,8 @@ static void hibernate()
 
     ESP_LOGI(__func__, "Sleeping for %dms", sleep_time);
     esp_sleep_enable_timer_wakeup(sleep_time * 1000);
+    //esp_sleep_enable_ext0_wakeup(FACTORY_RESET_PIN, HIGH);
+    //esp_sleep_enable_touchpad_wakeup();
     esp_deep_sleep_start();
 }
 
@@ -162,9 +175,11 @@ static void httpRequest()
 
         serializeSensors(item->sensors_data, sensors_data);
 
-        sprintf(payload, "station=%s&ps=%d&uptime=%d&offset=%d&cycles=%d" "&%s",
+        sprintf(payload, "station=%s&ver=%s&ps_http=%.2f&ps_poll=%.2f&uptime=%d" "&offset=%d&cycles=%d&%s",
             STATION_NAME,                 // Current station name
-            0,                            // Current power saving mode
+            "",                           // Build version information
+            (float)e_poll_interval / STATION_POLL_INTERVAL, // Current power saving mode
+            (float)e_http_interval / HTTP_UPDATE_INTERVAL,  // Current power saving mode
             start_time - boot_time,       // Current uptime (ms)
             item->timestamp - start_time, // Age of entry relative to now (ms)
             item->wake_count,             // Wake count at time of capture
@@ -236,6 +251,12 @@ void setup()
     if (access("/sd/firmware.bin", F_OK) != -1) {
         firmware_upgrade("/sd/firmware.bin");
     }
+
+    e_poll_interval = POWER_SAVE_INTERVAL(STATION_POLL_INTERVAL, POWER_POLL_LOW_VBAT_TRESHOLD, m_battery_Volt.getAvg());
+    e_http_interval = POWER_SAVE_INTERVAL(HTTP_UPDATE_INTERVAL, POWER_HTTP_LOW_VBAT_TRESHOLD, m_battery_Volt.getAvg());
+
+    ESP_LOGI(__func__, "Effective intervals: poll: %d (%d), http: %d (%d), vbat: %.2f",
+        e_poll_interval, STATION_POLL_INTERVAL, e_http_interval, HTTP_UPDATE_INTERVAL, m_battery_Volt.getAvg());
 }
 
 
@@ -243,7 +264,7 @@ void loop()
 {
     bool wifi_available = strlen(WIFI_SSID) > 0;
     bool http_available = strlen(HTTP_UPDATE_URL) > 0 && (last_http_update == 0 ||
-                            (start_time - last_http_update) >= HTTP_UPDATE_INTERVAL * 1000);
+                            (start_time - last_http_update) >= e_http_interval * 1000);
 
     if (!wifi_available) {
         ESP_LOGI(__func__, "WiFi: No configuration");

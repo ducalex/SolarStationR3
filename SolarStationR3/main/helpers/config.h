@@ -15,6 +15,10 @@ static char  HTTP_UPDATE_PASSWORD[64];  // 64
 static int   HTTP_UPDATE_INTERVAL;      // Seconds
 static int   HTTP_UPDATE_TIMEOUT;       // Seconds
 
+static double POWER_POLL_LOW_VBAT_TRESHOLD;  // Volts  (Maybe we should use percent so it works on any battery?)
+static double POWER_HTTP_LOW_VBAT_TRESHOLD;  // Volts  (Maybe we should use percent so it works on any battery?)
+static double POWER_VBAT_MULTIPLIER;         // Factor  (If there is a voltage divider)
+
 static const char *CONFIG_FILE = "/sd/config.json";
 static const char *CONFIG_NVS_NS = "configuration";
 
@@ -36,6 +40,10 @@ void saveConfiguration(bool update_only)
     config.setString("http.update_password", HTTP_UPDATE_PASSWORD);
     config.setInteger("http.update_timeout", HTTP_UPDATE_TIMEOUT);
     config.setInteger("http.update_interval", HTTP_UPDATE_INTERVAL);
+
+    config.setDouble("power.http_low_battery_treshold", POWER_POLL_LOW_VBAT_TRESHOLD);
+    config.setDouble("power.poll_low_battery_treshold", POWER_HTTP_LOW_VBAT_TRESHOLD);
+    config.setDouble("power.vbat_multiplier", POWER_VBAT_MULTIPLIER);
 
     config.saveFile(CONFIG_FILE, update_only);
     config.saveNVS(CONFIG_NVS_NS, update_only);
@@ -63,6 +71,10 @@ void loadConfiguration()
     config.getString("http.update_password", (char*)"", HTTP_UPDATE_PASSWORD);
     config.getInteger("http.update_timeout", 30, &HTTP_UPDATE_TIMEOUT);
     config.getInteger("http.update_interval", 300, &HTTP_UPDATE_INTERVAL);
+
+    config.getDouble("power.http_low_battery_treshold", 3.60, &POWER_POLL_LOW_VBAT_TRESHOLD);
+    config.getDouble("power.poll_low_battery_treshold", 3.30, &POWER_HTTP_LOW_VBAT_TRESHOLD);
+    config.getDouble("power.vbat_multiplier", 2.00, &POWER_VBAT_MULTIPLIER);
 
     saveConfiguration(true);
 }

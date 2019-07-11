@@ -8,12 +8,12 @@ static RTC_DATA_ATTR AVGr m_battery_Volt(60);
 static RTC_DATA_ATTR AVGr m_solar_Volt(60);
 static RTC_DATA_ATTR AVGr m_lightsensor1_RAW(60);
 static RTC_DATA_ATTR AVGr m_lightsensor2_RAW(60);
-static RTC_DATA_ATTR AVGr m_temperature1_C(12);
-static RTC_DATA_ATTR AVGr m_temperature2_C(12);
-static RTC_DATA_ATTR AVGr m_humidity1_Pct(12);
-static RTC_DATA_ATTR AVGr m_humidity2_Pct(12);
-static RTC_DATA_ATTR AVGr m_pressure1_kPa(12);
-static RTC_DATA_ATTR AVGr m_pressure2_kPa(12);
+static RTC_DATA_ATTR AVGr m_temperature1_C(10);
+static RTC_DATA_ATTR AVGr m_temperature2_C(10);
+static RTC_DATA_ATTR AVGr m_humidity1_Pct(10);
+static RTC_DATA_ATTR AVGr m_humidity2_Pct(10);
+static RTC_DATA_ATTR AVGr m_pressure1_kPa(10);
+static RTC_DATA_ATTR AVGr m_pressure2_kPa(10);
 static RTC_DATA_ATTR AVGr m_windSpeed_kmh(2);
 static RTC_DATA_ATTR AVGr m_windDirection_deg(2);
 static RTC_DATA_ATTR AVGr m_rain_RAW(2);
@@ -56,11 +56,19 @@ static void pollSensors()
     }
 
     ads.begin();
-    ads.setGain(GAIN_TWOTHIRDS);
-    m_battery_Volt.add(ads.readADC_SingleEnded(3));
-    m_solar_Volt.add(ads.readADC_SingleEnded(0));
-    ads.setGain(GAIN_ONE);
-    m_lightsensor1_RAW.add(ads.readADC_SingleEnded(1));
+    ads.setGain(GAIN_ONE); // real range is vdd + 0.3
+
+    for (int i = 0; i < 10; i++) {
+        m_battery_Volt.add(0.000125 * (int16_t)ads.readADC_SingleEnded(0) * POWER_VBAT_MULTIPLIER);
+        m_solar_Volt.add(0.000125 * (int16_t)ads.readADC_SingleEnded(1));
+        m_lightsensor1_RAW.add(0.000125 * (int16_t)ads.readADC_SingleEnded(2));
+        delay(5);
+    }
+
+    delay(15); // ADC can still be in the bus, crappy thingy
+
+    ESP_LOGI(__func__, "ADC: %.2f %.2f %.2f",
+        m_battery_Volt.getVal(), m_solar_Volt.getVal(), m_lightsensor1_RAW.getVal());
 }
 
 
