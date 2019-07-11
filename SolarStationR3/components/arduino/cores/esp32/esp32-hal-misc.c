@@ -34,7 +34,6 @@
 #include "rom/rtc.h"
 #include "esp_task_wdt.h"
 #include "esp32-hal.h"
-#include "unistd.h"
 
 //Undocumented!!! Get chip temperature in Farenheit
 //Source: https://github.com/pcbreflux/espressif/blob/master/esp32/arduino/sketchbook/ESP32_int_temp_sensor/ESP32_int_temp_sensor.ino
@@ -142,8 +141,11 @@ unsigned long IRAM_ATTR millis()
 
 void delay(uint32_t ms)
 {
-    usleep(ms * 1000);
-    //vTaskDelay(ms / portTICK_PERIOD_MS);
+    uint32_t delay_end = millis() + ms;
+    vTaskDelay(ms / portTICK_PERIOD_MS);
+    while (delay_end > millis()) {
+        NOP();
+    }
 }
 
 void IRAM_ATTR delayMicroseconds(uint32_t us)
