@@ -463,6 +463,23 @@ int log_printf(const char *format, ...)
     if(s_uart_debug_nr < 0){
         return 0;
     }
+    int len = 0;
+    va_list arg;
+    va_start(arg, format);
+#if 0//!CONFIG_DISABLE_HAL_LOCKS
+    if(_uart_bus_array[s_uart_debug_nr].lock){
+        xSemaphoreTake(_uart_bus_array[s_uart_debug_nr].lock, portMAX_DELAY);
+        len = vprintf(format, arg);
+        xSemaphoreGive(_uart_bus_array[s_uart_debug_nr].lock);
+    } else {
+        len = vprintf(format, arg);
+    }
+#else
+    len = vprintf(format, arg);
+#endif
+    va_end(arg);
+    return len;
+    /*
     static char loc_buf[64];
     char * temp = loc_buf;
     int len;
@@ -495,10 +512,11 @@ int log_printf(const char *format, ...)
         free(temp);
     }
     return len;
+    */
 }
 
 /*
- * if enough pulses are detected return the minimum high pulse duration + minimum low pulse duration divided by two. 
+ * if enough pulses are detected return the minimum high pulse duration + minimum low pulse duration divided by two.
  * This equals one bit period. If flag is true the function return inmediately, otherwise it waits for enough pulses.
  */
 unsigned long uartBaudrateDetect(uart_t *uart, bool flg)
@@ -516,8 +534,8 @@ unsigned long uartBaudrateDetect(uart_t *uart, bool flg)
 }
 
 /*
- * To start detection of baud rate with the uart the auto_baud.en bit needs to be cleared and set. The bit period is 
- * detected calling uartBadrateDetect(). The raw baudrate is computed using the UART_CLK_FREQ. The raw baudrate is 
+ * To start detection of baud rate with the uart the auto_baud.en bit needs to be cleared and set. The bit period is
+ * detected calling uartBadrateDetect(). The raw baudrate is computed using the UART_CLK_FREQ. The raw baudrate is
  * rounded to the closed real baudrate.
 */
 unsigned long
