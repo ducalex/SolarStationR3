@@ -11,15 +11,15 @@
 #include "config.h"
 // Most of these should have their own .cpp file, but I'm lazy :(
 #include "helpers/config.h"
+#include "helpers/time.h"
 #include "helpers/display.h"
 #include "helpers/sensors.h"
-#include "helpers/time.h"
 
-#define HTTP_QUEUE_MAX_ITEMS 60
+#define HTTP_QUEUE_MAX_ITEMS 40
 typedef struct {
     uint32_t timestamp;
     uint32_t wake_count;
-    sensors_data_t sensors_data;
+    float sensors_data[SENSORS_COUNT];
 } http_item_t;
 
 RTC_DATA_ATTR static uint32_t wake_count = 0;
@@ -153,7 +153,6 @@ static void httpRequest()
 
     short count = 0;
     char payload[512];
-    char sensors_data[512];
 
     for (int i = 0; i < HTTP_QUEUE_MAX_ITEMS; i++) {
         http_item_t *item = &http_queue[i];
@@ -173,7 +172,7 @@ static void httpRequest()
             http.setAuthorization(HTTP_UPDATE_USERNAME, HTTP_UPDATE_PASSWORD);
         }
 
-        serializeSensors(item->sensors_data, sensors_data);
+        char *sensors_data = serializeSensors(item->sensors_data);
 
         sprintf(payload, "station=%s&app=%s&ps_http=%.2f&ps_poll=%.2f&uptime=%d" "&offset=%d&cycles=%d&%s",
             STATION_NAME,                 // Current station name
@@ -185,6 +184,7 @@ static void httpRequest()
             item->wake_count,             // Wake count at time of capture
             sensors_data                  // Sensors data at time of capture
         );
+        free(sensors_data);
 
         ESP_LOGI(__func__, "HTTP(%d): Sending: '%s'", count, payload);
 
@@ -285,7 +285,7 @@ void loop()
     http_item_t *item = &http_queue[http_queue_pos];
     item->timestamp = start_time;
     item->wake_count = wake_count;
-    item->sensors_data = readSensors();
+    packSensors(item->sensors_data);
     http_queue_pos = (http_queue_pos + 1) % HTTP_QUEUE_MAX_ITEMS;
 
 
