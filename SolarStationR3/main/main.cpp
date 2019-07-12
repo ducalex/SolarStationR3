@@ -25,7 +25,7 @@ typedef struct {
 RTC_DATA_ATTR static uint32_t wake_count = 0;
 RTC_DATA_ATTR static uint32_t boot_time = 0;
 RTC_DATA_ATTR static uint32_t start_time = 0;
-RTC_DATA_ATTR static uint32_t last_http_update = 0;
+RTC_DATA_ATTR static uint32_t next_http_update = 0;
 RTC_DATA_ATTR static http_item_t http_queue[HTTP_QUEUE_MAX_ITEMS];
 RTC_DATA_ATTR static uint16_t http_queue_pos = 0;
 
@@ -71,7 +71,7 @@ static void hibernate()
 
     ESP_LOGI(__func__, "Sleeping for %dms", sleep_time);
     esp_sleep_enable_timer_wakeup(sleep_time * 1000);
-    //esp_sleep_enable_ext0_wakeup(FACTORY_RESET_PIN, HIGH);
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)WAKEUP_BUTTON_PIN, LOW);
     //esp_sleep_enable_touchpad_wakeup();
     esp_deep_sleep_start();
 }
@@ -175,7 +175,7 @@ static void httpRequest()
 
         serializeSensors(item->sensors_data, sensors_data);
 
-        sprintf(payload, "station=%s&ver=%s&ps_http=%.2f&ps_poll=%.2f&uptime=%d" "&offset=%d&cycles=%d&%s",
+        sprintf(payload, "station=%s&app=%s&ps_http=%.2f&ps_poll=%.2f&uptime=%d" "&offset=%d&cycles=%d&%s",
             STATION_NAME,                 // Current station name
             "",                           // Build version information
             (float)e_poll_interval / STATION_POLL_INTERVAL, // Current power saving mode
@@ -202,8 +202,7 @@ static void httpRequest()
         memset(item, 0, sizeof(http_item_t)); // Or do it only on success?
     }
 
-    //last_http_update = rtc_millis();
-    last_http_update = start_time;
+    next_http_update = start_time + (e_http_interval * 1000);
 }
 
 
@@ -251,20 +250,13 @@ void setup()
     if (access("/sd/firmware.bin", F_OK) != -1) {
         firmware_upgrade("/sd/firmware.bin");
     }
-
-    e_poll_interval = POWER_SAVE_INTERVAL(STATION_POLL_INTERVAL, POWER_POLL_LOW_VBAT_TRESHOLD, m_battery_Volt.getAvg());
-    e_http_interval = POWER_SAVE_INTERVAL(HTTP_UPDATE_INTERVAL, POWER_HTTP_LOW_VBAT_TRESHOLD, m_battery_Volt.getAvg());
-
-    ESP_LOGI(__func__, "Effective intervals: poll: %d (%d), http: %d (%d), vbat: %.2f",
-        e_poll_interval, STATION_POLL_INTERVAL, e_http_interval, HTTP_UPDATE_INTERVAL, m_battery_Volt.getAvg());
 }
 
 
 void loop()
 {
     bool wifi_available = strlen(WIFI_SSID) > 0;
-    bool http_available = strlen(HTTP_UPDATE_URL) > 0 && (last_http_update == 0 ||
-                            (start_time - last_http_update) >= e_http_interval * 1000);
+    bool http_available = strlen(HTTP_UPDATE_URL) > 0 && start_time >= next_http_update;
 
     if (!wifi_available) {
         ESP_LOGI(__func__, "WiFi: No configuration");
@@ -283,9 +275,11 @@ void loop()
         WiFi.setSleep(true);
     }
 
+
     // Poll sensors while wifi connects
     pollSensors();
     displaySensors();
+
 
     // Add sensors data to HTTP queue
     http_item_t *item = &http_queue[http_queue_pos];
@@ -293,6 +287,15 @@ void loop()
     item->wake_count = wake_count;
     item->sensors_data = readSensors();
     http_queue_pos = (http_queue_pos + 1) % HTTP_QUEUE_MAX_ITEMS;
+
+
+    // Adjust our intervals based on the battery we've just read
+    e_poll_interval = POWER_SAVE_INTERVAL(STATION_POLL_INTERVAL, POWER_POLL_LOW_VBAT_TRESHOLD, m_battery_Volt.avg);
+    e_http_interval = POWER_SAVE_INTERVAL(HTTP_UPDATE_INTERVAL, POWER_HTTP_LOW_VBAT_TRESHOLD, m_battery_Volt.avg);
+
+    ESP_LOGI(__func__, "Effective intervals: poll: %d (%d), http: %d (%d), vbat: %.2f",
+        e_poll_interval, STATION_POLL_INTERVAL, e_http_interval, HTTP_UPDATE_INTERVAL, m_battery_Volt.avg);
+
 
     // Now do the http request!
     if (wifi_available && http_available) {
@@ -313,11 +316,14 @@ void loop()
             Display.printf("\nFailed!");
         }
         WiFi.disconnect(true);
+        delay(200);
     }
+
 
     if (Display.isPresent()) {
         ls_delay(STATION_DISPLAY_TIMEOUT * 1000 - millis());
     }
+
 
     // Sleep
     hibernate();
