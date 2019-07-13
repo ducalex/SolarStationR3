@@ -179,7 +179,9 @@ bool ConfigProvider::getString(const char *key, char *default_value, char *out)
 {
     cJSON *obj = cJSON_GetObjectItem(root, key);
     if (obj == NULL || obj->valuestring == NULL) {
-        strcpy(out, default_value);
+        if (out != default_value) {
+            strcpy(out, default_value);
+        }
         return false;
     }
     strcpy(out, obj->valuestring);

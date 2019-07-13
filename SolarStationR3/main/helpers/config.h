@@ -1,23 +1,23 @@
 #include "ConfigProvider.h"
 
-static char  STATION_NAME[64];          // 32
-static int   STATION_POLL_INTERVAL;     // Seconds
-static int   STATION_POWER_SAVING;      //
-static int   STATION_DISPLAY_TIMEOUT;   // Seconds
+static char  STATION_NAME[64]         = "SolarStationR3";
+static int   STATION_POLL_INTERVAL    = 60;  // Seconds
+static int   STATION_POWER_SAVING     = 0;   // Not used yet
+static int   STATION_DISPLAY_TIMEOUT  = 10;  // Seconds
 
-static char  WIFI_SSID[33];             // 32 per esp-idf
-static char  WIFI_PASSWORD[65];         // 64 per esp-idf
-static int   WIFI_TIMEOUT;              // Seconds
+static char  WIFI_SSID[33]            = "";  // 32 per esp-idf
+static char  WIFI_PASSWORD[65]        = "";  // 64 per esp-idf
+static int   WIFI_TIMEOUT             = 10;  // Seconds
 
-static char  HTTP_UPDATE_URL[128];      // 128
-static char  HTTP_UPDATE_USERNAME[64];  // 64
-static char  HTTP_UPDATE_PASSWORD[64];  // 64
-static int   HTTP_UPDATE_INTERVAL;      // Seconds
-static int   HTTP_UPDATE_TIMEOUT;       // Seconds
+static char  HTTP_UPDATE_URL[128]     = "";
+static char  HTTP_UPDATE_USERNAME[64] = "";
+static char  HTTP_UPDATE_PASSWORD[64] = "";
+static int   HTTP_UPDATE_INTERVAL     = 60;  // Seconds
+static int   HTTP_UPDATE_TIMEOUT      = 30;  // Seconds
 
-static double POWER_POLL_LOW_VBAT_TRESHOLD;  // Volts  (Maybe we should use percent so it works on any battery?)
-static double POWER_HTTP_LOW_VBAT_TRESHOLD;  // Volts  (Maybe we should use percent so it works on any battery?)
-static double POWER_VBAT_MULTIPLIER;         // Factor  (If there is a voltage divider)
+static double POWER_POLL_LOW_VBAT_TRESHOLD = 3.7;  // Volts  (Maybe we should use percent so it works on any battery?)
+static double POWER_HTTP_LOW_VBAT_TRESHOLD = 3.5;  // Volts  (Maybe we should use percent so it works on any battery?)
+static double POWER_VBAT_MULTIPLIER        = 2.0;  // Factor (If there is a voltage divider)
 
 static const char *CONFIG_FILE = "/sd/config.json";
 static const char *CONFIG_NVS_NS = "configuration";
@@ -57,24 +57,24 @@ void loadConfiguration()
 
     // cJSON has a weird handling of NULL, it's better to pass an empty string if we
     // want keys to appear in the config file
-    config.getString("station.name", (char*)"SolarStationR3", STATION_NAME);
-    config.getInteger("station.poll_interval", 60, &STATION_POLL_INTERVAL);
-    config.getInteger("station.power_saving", 0, &STATION_POWER_SAVING);
-    config.getInteger("station.display_timeout", 10, &STATION_DISPLAY_TIMEOUT);
+    config.getString("station.name", STATION_NAME, STATION_NAME);
+    config.getInteger("station.poll_interval", STATION_POLL_INTERVAL, &STATION_POLL_INTERVAL);
+    config.getInteger("station.power_saving", STATION_POWER_SAVING, &STATION_POWER_SAVING);
+    config.getInteger("station.display_timeout", STATION_DISPLAY_TIMEOUT, &STATION_DISPLAY_TIMEOUT);
 
-    config.getString("wifi.ssid", (char*)"", WIFI_SSID);
-    config.getString("wifi.password", (char*)"", WIFI_PASSWORD);
-    config.getInteger("wifi.timeout", 15, &WIFI_TIMEOUT);
+    config.getString("wifi.ssid", WIFI_SSID, WIFI_SSID);
+    config.getString("wifi.password", WIFI_PASSWORD, WIFI_PASSWORD);
+    config.getInteger("wifi.timeout", WIFI_TIMEOUT, &WIFI_TIMEOUT);
 
-    config.getString("http.update_url", (char*)"", HTTP_UPDATE_URL);
-    config.getString("http.update_username", (char*)"", HTTP_UPDATE_USERNAME);
-    config.getString("http.update_password", (char*)"", HTTP_UPDATE_PASSWORD);
-    config.getInteger("http.update_timeout", 30, &HTTP_UPDATE_TIMEOUT);
-    config.getInteger("http.update_interval", 300, &HTTP_UPDATE_INTERVAL);
+    config.getString("http.update_url", HTTP_UPDATE_URL, HTTP_UPDATE_URL);
+    config.getString("http.update_username", HTTP_UPDATE_USERNAME, HTTP_UPDATE_USERNAME);
+    config.getString("http.update_password", HTTP_UPDATE_PASSWORD, HTTP_UPDATE_PASSWORD);
+    config.getInteger("http.update_timeout", HTTP_UPDATE_TIMEOUT, &HTTP_UPDATE_TIMEOUT);
+    config.getInteger("http.update_interval", HTTP_UPDATE_INTERVAL, &HTTP_UPDATE_INTERVAL);
 
-    config.getDouble("power.http_low_battery_treshold", 3.70, &POWER_POLL_LOW_VBAT_TRESHOLD);
-    config.getDouble("power.poll_low_battery_treshold", 3.50, &POWER_HTTP_LOW_VBAT_TRESHOLD);
-    config.getDouble("power.vbat_multiplier", 2.00, &POWER_VBAT_MULTIPLIER);
+    config.getDouble("power.http_low_battery_treshold", POWER_POLL_LOW_VBAT_TRESHOLD, &POWER_POLL_LOW_VBAT_TRESHOLD);
+    config.getDouble("power.poll_low_battery_treshold", POWER_HTTP_LOW_VBAT_TRESHOLD, &POWER_HTTP_LOW_VBAT_TRESHOLD);
+    config.getDouble("power.vbat_multiplier", POWER_VBAT_MULTIPLIER, &POWER_VBAT_MULTIPLIER);
 
     saveConfiguration(true);
 }
