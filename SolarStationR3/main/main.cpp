@@ -32,7 +32,9 @@ RTC_DATA_ATTR static uint16_t http_queue_pos = 0;
 static uint32_t e_poll_interval; // Effective interval. Normally = STATION_POLL_INTERVAL
 static uint32_t e_http_interval; // Effective interval. Normally = HTTP_UPDATE_INTERVAL
 
-#define POWER_SAVE_INTERVAL(interval, th, vb) (((float)th <= vb || vb < 2) ? interval : (uint)ceil(((th-vb) * 100.00) * interval))
+extern const esp_app_desc_t esp_app_desc;
+
+#define POWER_SAVE_INTERVAL(in, th, vb) (((float)th <= vb || vb < 2) ? in : (uint)ceil(((th-vb) * 100.00) * in))
 #define PRINT_MEMORY_STATS() { \
   multi_heap_info_t info; \
   heap_caps_get_info(&info, MALLOC_CAP_DEFAULT); \
@@ -174,9 +176,10 @@ static void httpRequest()
 
         char *sensors_data = serializeSensors(item->sensors_data);
 
-        sprintf(payload, "station=%s&app=%s&ps_http=%.2f&ps_poll=%.2f&uptime=%d" "&offset=%d&cycles=%d&%s",
+        sprintf(payload, "station=%s&app=%s+%s&ps_http=%.2f&ps_poll=%.2f&uptime=%d" "&offset=%d&cycles=%d&%s",
             STATION_NAME,                 // Current station name
-            "",                           // Build version information
+            PROJECT_VERSION,              // Build version information
+            esp_app_desc.version,         // Build version information
             (float)e_poll_interval / STATION_POLL_INTERVAL, // Current power saving mode
             (float)e_http_interval / HTTP_UPDATE_INTERVAL,  // Current power saving mode
             start_time - boot_time,       // Current uptime (ms)
@@ -208,8 +211,9 @@ static void httpRequest()
 
 void setup()
 {
-    printf("\n################### WEATHER STATION (Version: %s) ###################\n\n", PROJECT_VER);
-    ESP_LOGI("Uptime", "Uptime: %d seconds (Cycles: %d)", (rtc_millis() - boot_time) / 1000, wake_count);
+    printf("\n################### WEATHER STATION (Version: %s) ###################\n\n", PROJECT_VERSION);
+    ESP_LOGI(__func__, "Build: %s (%s %s)", esp_app_desc.version, esp_app_desc.date, esp_app_desc.time);
+    ESP_LOGI(__func__, "Uptime: %d seconds (Cycles: %d)", (rtc_millis() - boot_time) / 1000, wake_count);
     PRINT_MEMORY_STATS();
 
     if (boot_time == 0) {

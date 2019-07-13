@@ -1,7 +1,7 @@
-#define PROJECT_VER "1"
+#define PROJECT_VERSION "1.0-dev"
 
 #define FACTORY_RESET_PIN 15 // Just a reminder to not use this pin
-#define WAKEUP_BUTTON_PIN    15 // Wake from deep sleep. Might use touch if it's less power-hungry
+#define WAKEUP_BUTTON_PIN 15 // Wake from deep sleep. Might use touch if it's less power-hungry
 
 // These pins are put in parallel to power all our peripherals (Sensors, Screen, SD Card).
 // A single pin might be enough, the datasheet isn't clear about the max current available.
