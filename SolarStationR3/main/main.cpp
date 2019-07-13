@@ -20,6 +20,7 @@ typedef struct {
     uint32_t timestamp;
     uint32_t wake_count;
     float sensors_data[SENSORS_COUNT];
+    uint32_t sensors_status;
 } http_item_t;
 
 RTC_DATA_ATTR static uint32_t wake_count = 0;
@@ -176,7 +177,7 @@ static void httpRequest()
 
         char *sensors_data = serializeSensors(item->sensors_data);
 
-        sprintf(payload, "station=%s&app=%s+%s&ps_http=%.2f&ps_poll=%.2f&uptime=%d" "&offset=%d&cycles=%d&%s",
+        sprintf(payload, "station=%s&app=%s+%s&ps_http=%.2f&ps_poll=%.2f&uptime=%d" "&offset=%d&cycles=%d&status=%d&%s",
             STATION_NAME,                 // Current station name
             PROJECT_VERSION,              // Build version information
             esp_app_desc.version,         // Build version information
@@ -185,6 +186,7 @@ static void httpRequest()
             start_time - boot_time,       // Current uptime (ms)
             item->timestamp - start_time, // Age of entry relative to now (ms)
             item->wake_count,             // Wake count at time of capture
+            item->sensors_status,         // Each bit represents a sensor. 0 = no error
             sensors_data                  // Sensors data at time of capture
         );
         free(sensors_data);
@@ -270,7 +272,7 @@ void loop()
     }
     else if (!http_available) {
         ESP_LOGI(__func__, "Polling sensors");
-        Display.printf("Polling sensors!\n");
+        // Display.printf("Polling sensors!\n");
     }
     else {
         ESP_LOGI(__func__, "WiFi: Connecting to: '%s'...", WIFI_SSID);
@@ -291,7 +293,7 @@ void loop()
     http_item_t *item = &http_queue[http_queue_pos];
     item->timestamp = start_time;
     item->wake_count = wake_count;
-    packSensors(item->sensors_data);
+    packSensors(item->sensors_data, &item->sensors_status);
     http_queue_pos = (http_queue_pos + 1) % HTTP_QUEUE_MAX_ITEMS;
 
 

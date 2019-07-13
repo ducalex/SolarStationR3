@@ -3,9 +3,10 @@
 #include "DHT.h"
 #include "../config.h"
 
-#define SENSOR(key, avgr) {key, 0, avgr, 0, 0.00, 0.00, 0.00, 0.00}
+#define SENSOR(key, avgr) {key, 0, 0, avgr, 0, 0.00, 0.00, 0.00, 0.00}
 typedef struct {
     char key[8];      // Sensor key used when serializing
+    short status;     // Status
     ulong updated;    // Last update timestamp
     short nsamples;   // Used in avg calculation
     short count;      //
@@ -46,6 +47,9 @@ const SENSOR_t *sensors[] = {
 };
 const int SENSORS_COUNT = (sizeof(sensors) / sizeof(SENSOR_t*));
 
+#define SENSOR_OK 0
+#define SENSOR_ERR_UNKNOWN -1
+#define SENSOR_ERR_TIMEOUT -2
 
 static void setSensorValue(SENSOR_t *handle, float value)
 {
@@ -53,9 +57,17 @@ static void setSensorValue(SENSOR_t *handle, float value)
         handle->count++;
     handle->avg = (handle->avg * ((float)(handle->count - 1) / handle->count)) + value / handle->count;
     handle->val = value;
+    handle->status = SENSOR_OK;
     handle->updated = rtc_millis();
     if (value < handle->min || handle->count == 1) handle->min = value;
     if (value > handle->max || handle->count == 1) handle->max = value;
+}
+
+
+static void setSensorError(SENSOR_t *handle, short status = SENSOR_ERR_UNKNOWN)
+{
+    handle->status = status;
+    handle->val = 0;
 }
 
 
@@ -68,7 +80,8 @@ static void pollSensors()
         setSensorValue(&m_humidity1_Pct, h);
         ESP_LOGI(__func__, "DHT: %.2f %.2f", t, h);
     } else {
-        // add 0?
+        setSensorError(&m_temperature1_C, SENSOR_ERR_UNKNOWN);
+        setSensorError(&m_humidity1_Pct, SENSOR_ERR_UNKNOWN);
         ESP_LOGE(__func__, "DHT sensor not responding");
     }
 
@@ -77,7 +90,8 @@ static void pollSensors()
         setSensorValue(&m_pressure1_kPa, p);
         ESP_LOGI(__func__, "BMP: %.2f %.2f", t, p);
     } else {
-        // add 0?
+        setSensorError(&m_temperature2_C, SENSOR_ERR_UNKNOWN);
+        setSensorError(&m_pressure1_kPa, SENSOR_ERR_UNKNOWN);
         ESP_LOGE(__func__, "BMP180 sensor not responding");
     }
 
@@ -101,16 +115,23 @@ static void pollSensors()
         setSensorValue(&m_lightsensor1_RAW, adc2);
         ESP_LOGI(__func__, "ADC: %.2f %.2f %.2f %.2f", adc0, adc1, adc2, adc3);
     } else {
-        // add 0?
+        setSensorError(&m_battery_Volt, SENSOR_ERR_UNKNOWN);
+        setSensorError(&m_solar_Volt, SENSOR_ERR_UNKNOWN);
+        setSensorError(&m_lightsensor1_RAW, SENSOR_ERR_UNKNOWN);
         ESP_LOGE(__func__, "ADS1115 sensor not responding");
     }
 }
 
 
-static void packSensors(float *outFrame)
+static void packSensors(float *outFrame, uint32_t *outStatus)
 {
+    *outStatus = 0;
+
     for (int i = 0; i < SENSORS_COUNT; i++) {
         outFrame[i] = sensors[i]->val;
+        if (sensors[i]->status != 0) {
+            *outStatus |= (1 << i);
+        }
     }
 }
 
@@ -128,7 +149,7 @@ static char* serializeSensors(float *frame)
 static void displaySensors()
 {
     Display.printf("Volt: %.2f %.2f\n", m_battery_Volt.val, m_solar_Volt.val);
-    Display.printf("Light: %d %d\n", m_lightsensor1_RAW.val, m_lightsensor2_RAW.val);
+    Display.printf("Light: %d %d\n", (int16_t)m_lightsensor1_RAW.val, (int16_t)m_lightsensor2_RAW.val);
     Display.printf("Temp: %.2f %.2f\n", m_temperature1_C.val, m_temperature2_C.val);
     Display.printf("Humidity: %.0f %.0f\n", m_humidity1_Pct.val, m_humidity2_Pct.val);
     Display.printf("Pressure: %.2f %.2f\n", m_pressure1_kPa.val, m_pressure2_kPa.val);
