@@ -45,8 +45,9 @@ extern const esp_app_desc_t esp_app_desc;
 
 static void ls_delay(uint32_t ms)
 {
-    fflush(stdout);    // Flush serial and SD card buffers before going to sleep
-    esp_sleep_enable_timer_wakeup((ms) * 1000);
+    ESP_LOGI(__func__, "Light sleeping for %dms", ms);
+    delay(50); // Time for the uart hardware buffer to empty
+    esp_sleep_enable_timer_wakeup((ms - 50) * 1000);
     esp_light_sleep_start();
 }
 
@@ -72,7 +73,7 @@ static void hibernate()
         ESP_LOGW(__func__, "Bogus sleep time, did we spend too much time processing?");
     }
 
-    ESP_LOGI(__func__, "Sleeping for %dms", sleep_time);
+    ESP_LOGI(__func__, "Deep sleeping for %dms", sleep_time);
     esp_sleep_enable_timer_wakeup(sleep_time * 1000);
     esp_sleep_enable_ext0_wakeup((gpio_num_t)WAKEUP_BUTTON_PIN, LOW);
     //esp_sleep_enable_touchpad_wakeup();
@@ -225,8 +226,6 @@ void setup()
     start_time = rtc_millis();
     wake_count++;
 
-    // setbuf(stdout, NULL);
-
     // Power up our peripherals (Do not switch both pin to output at once!)
     pinMode(PERIPH_POWER_PIN_1, OUTPUT);
     digitalWrite(PERIPH_POWER_PIN_1, HIGH);
@@ -324,14 +323,13 @@ void loop()
             Display.printf("\nFailed!");
         }
         WiFi.disconnect(true);
-        delay(200);
+        delay(200); // This resolves a crash
     }
 
 
     if (Display.isPresent()) {
         ls_delay(STATION_DISPLAY_TIMEOUT * 1000 - millis());
     }
-
 
     // Sleep
     hibernate();

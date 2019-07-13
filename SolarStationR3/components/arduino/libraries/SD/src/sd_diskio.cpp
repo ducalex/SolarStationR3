@@ -588,6 +588,10 @@ DRESULT ff_sd_read(uint8_t pdrv, uint8_t* buffer, DWORD sector, UINT count)
     } else {
         res = sdReadSector(pdrv, (char*)buffer, sector) ? RES_OK : RES_ERROR;
     }
+
+    // This is needed so the SD Card releases the bus and goes to sleep
+    card->spi->transfer(0xFF);
+
     return res;
 }
 
@@ -609,6 +613,10 @@ DRESULT ff_sd_write(uint8_t pdrv, const uint8_t* buffer, DWORD sector, UINT coun
         res = sdWriteSectors(pdrv, (const char*)buffer, sector, count) ? RES_OK : RES_ERROR;
     }
     res = sdWriteSector(pdrv, (const char*)buffer, sector) ? RES_OK : RES_ERROR;
+
+    // This is needed so the SD Card releases the bus and goes to sleep
+    card->spi->transfer(0xFF);
+
     return res;
 }
 
