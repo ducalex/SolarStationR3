@@ -81,31 +81,29 @@ static void pollSensors()
         ESP_LOGE(__func__, "BMP180 sensor not responding");
     }
 
-    Adafruit_ADS1115 ads;
-    ads.begin();
-    ads.setGain(GAIN_ONE); // real range is vdd + 0.3
+    Wire.beginTransmission(ADS1015_ADDRESS);
 
-    float adc0 = 0, adc1 = 0, adc2 = 0, adc3 = 0;
-    float vbit = 0.000125, samples = 10;
+    if (Wire.endTransmission() == 0) {
+        Adafruit_ADS1115 ads;
+        ads.begin();
+        ads.setGain(GAIN_ONE); // real range is vdd + 0.3
 
-    for (int i = 0; i < samples; i++) {
-        adc0 += (int16_t)ads.readADC_SingleEnded(0);
-        adc1 += (int16_t)ads.readADC_SingleEnded(1);
-        adc2 += (int16_t)ads.readADC_SingleEnded(2);
-        adc3 += (int16_t)ads.readADC_SingleEnded(3);
-        delay(50);
+        float adc0 = 0, adc1 = 0, adc2 = 0, adc3 = 0;
+        float vbit = 0.000125, samples = 10;
+
+        adc0 = (int16_t)ads.readADC_SingleEnded(0) * vbit;
+        adc1 = (int16_t)ads.readADC_SingleEnded(1) * vbit;
+        adc2 = (int16_t)ads.readADC_SingleEnded(2) * vbit;
+        adc3 = (int16_t)ads.readADC_SingleEnded(3) * vbit;
+
+        setSensorValue(&m_battery_Volt, adc0 * POWER_VBAT_MULTIPLIER);
+        setSensorValue(&m_solar_Volt, adc1);
+        setSensorValue(&m_lightsensor1_RAW, adc2);
+        ESP_LOGI(__func__, "ADC: %.2f %.2f %.2f %.2f", adc0, adc1, adc2, adc3);
+    } else {
+        // add 0?
+        ESP_LOGE(__func__, "ADS1115 sensor not responding");
     }
-
-    adc0 = adc0 / samples * vbit;
-    adc1 = adc1 / samples * vbit;
-    adc2 = adc2 / samples * vbit;
-    adc3 = adc3 / samples * vbit;
-
-    setSensorValue(&m_battery_Volt, adc0 * POWER_VBAT_MULTIPLIER);
-    setSensorValue(&m_solar_Volt, adc1);
-    setSensorValue(&m_lightsensor1_RAW, adc2);
-
-    ESP_LOGI(__func__, "ADC: %.2f %.2f %.2f %.2f", adc0, adc1, adc2, adc3);
 }
 
 

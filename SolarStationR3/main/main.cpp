@@ -223,6 +223,8 @@ void setup()
     start_time = rtc_millis();
     wake_count++;
 
+    // setbuf(stdout, NULL);
+
     // Power up our peripherals (Do not switch both pin to output at once!)
     pinMode(PERIPH_POWER_PIN_1, OUTPUT);
     digitalWrite(PERIPH_POWER_PIN_1, HIGH);
