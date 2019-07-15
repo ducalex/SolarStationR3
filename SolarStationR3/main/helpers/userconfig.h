@@ -78,3 +78,19 @@ void loadConfiguration()
 
     saveConfiguration(true);
 }
+
+// CONFIG_STR(STATION_NAME,                   "station.name",                      "SolarStationR3"),
+// CONFIG_INT(STATION_POLL_INTERVAL,          "station.poll_interval",             60),
+// CONFIG_INT(STATION_POWER_SAVING,           "station.power_saving",              0 ),
+// CONFIG_INT(STATION_DISPLAY_TIMEOUT,        "station.display_timeout",           10),
+// CONFIG_STR(WIFI_SSID,                      "wifi.ssid",                         ""),
+// CONFIG_STR(WIFI_PASSWORD,                  "wifi.password",                     ""),
+// CONFIG_INT(WIFI_TIMEOUT,                   "wifi.timeout",                      0 ),
+// CONFIG_STR(HTTP_UPDATE_URL,                "http.update_url",                   ""),
+// CONFIG_STR(HTTP_UPDATE_USERNAME,           "http.update_username",              ""),
+// CONFIG_STR(HTTP_UPDATE_PASSWORD,           "http.update_password",              ""),
+// CONFIG_INT(HTTP_UPDATE_INTERVAL,           "http.update_timeout",               60),
+// CONFIG_INT(HTTP_UPDATE_TIMEOUT,            "http.update_interval",              30),
+// CONFIG_DBL(POWER_POLL_LOW_VBAT_TRESHOLD,   "power.http_low_battery_treshold",   3.7),
+// CONFIG_DBL(POWER_HTTP_LOW_VBAT_TRESHOLD,   "power.poll_low_battery_treshold",   3.5),
+// CONFIG_DBL(POWER_VBAT_MULTIPLIER,          "power.vbat_multiplier",             2.0),

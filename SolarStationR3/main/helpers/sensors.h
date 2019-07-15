@@ -148,9 +148,9 @@ static char* serializeSensors(float *frame)
 
 static void displaySensors()
 {
-    Display.printf("Volt: %.2f %.2f\n", m_battery_Volt.val, m_solar_Volt.val);
-    Display.printf("Light: %d %d\n", (int16_t)m_lightsensor1_RAW.val, (int16_t)m_lightsensor2_RAW.val);
-    Display.printf("Temp: %.2f %.2f\n", m_temperature1_C.val, m_temperature2_C.val);
-    Display.printf("Humidity: %.0f %.0f\n", m_humidity1_Pct.val, m_humidity2_Pct.val);
-    Display.printf("Pressure: %.2f %.2f\n", m_pressure1_kPa.val, m_pressure2_kPa.val);
+    Display.printf("\nVolt: %.2f %.2f", m_battery_Volt.val, m_solar_Volt.val);
+    Display.printf("\nLight: %d %d", (int16_t)m_lightsensor1_RAW.val, (int16_t)m_lightsensor2_RAW.val);
+    Display.printf("\nTemp: %.2f %.2f", m_temperature1_C.val, m_temperature2_C.val);
+    Display.printf("\nHumidity: %.0f %.0f", m_humidity1_Pct.val, m_humidity2_Pct.val);
+    Display.printf("\nPressure: %.2f %.2f", m_pressure1_kPa.val, m_pressure2_kPa.val);
 }

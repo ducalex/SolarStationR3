@@ -10,7 +10,7 @@
 #include "esp_system.h"
 #include "config.h"
 // Most of these should have their own .cpp file, but I'm lazy :(
-#include "helpers/config.h"
+#include "helpers/userconfig.h"
 #include "helpers/time.h"
 #include "helpers/display.h"
 #include "helpers/sensors.h"
@@ -32,6 +32,7 @@ RTC_DATA_ATTR static uint16_t http_queue_pos = 0;
 
 static uint32_t e_poll_interval; // Effective interval. Normally = STATION_POLL_INTERVAL
 static uint32_t e_http_interval; // Effective interval. Normally = HTTP_UPDATE_INTERVAL
+static bool sd_mounted = false;
 
 extern const esp_app_desc_t esp_app_desc;
 
@@ -61,8 +62,7 @@ static void hibernate()
     SD.end();
 
     // Power down our peripherals
-    pinMode(PERIPH_POWER_PIN_1, INPUT_PULLDOWN);
-    pinMode(PERIPH_POWER_PIN_2, INPUT_PULLDOWN);
+    pinMode(PERIPH_POWER_PIN, INPUT);
 
     // Sleep
     int interval_ms = e_poll_interval * 1000;
@@ -81,7 +81,13 @@ static void hibernate()
 }
 
 
-static void firmware_upgrade(const char *file)
+static void firmware_upgrade_from_http(const char *url)
+{
+
+}
+
+
+static void firmware_upgrade_from_file(const char *file)
 {
     const esp_partition_t *factory = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
     const esp_partition_t *target = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
@@ -152,8 +158,7 @@ static void firmware_upgrade(const char *file)
 
 static void httpRequest()
 {
-    ESP_LOGI(__func__, "HTTP: POST request to '%s'...", HTTP_UPDATE_URL);
-    Display.printf("HTTP: POST...");
+    ESP_LOGI(__func__, "HTTP: POST request(s) to '%s'...", HTTP_UPDATE_URL);
 
     short count = 0;
     char payload[512];
@@ -192,16 +197,21 @@ static void httpRequest()
         );
         free(sensors_data);
 
-        ESP_LOGI(__func__, "HTTP(%d): Sending: '%s'", count, payload);
+        Display.printf("\nHTTP POST...");
 
+        ESP_LOGI(__func__, "HTTP(%d): Sending body: '%s'", count, payload);
         int httpCode = http.POST(payload);
-        ESP_LOGI(__func__, "HTTP(%d): Return code: %d", count, httpCode);
 
-        if (httpCode > 0) {
-            ESP_LOGI(__func__, "HTTP(%d): Received: '%s'", count, http.getString().c_str());
-            Display.printf("%d\n", httpCode);
-        } else {
-            Display.printf("error: %s\n", http.errorToString(httpCode).c_str());
+        if (httpCode >= 400) {
+            ESP_LOGW(__func__, "HTTP(%d): Received code: %d  Body: '%s'", count, httpCode, http.getString().c_str());
+            Display.printf("Failed (%d)", httpCode);
+        }
+        else if (httpCode > 0) {
+            ESP_LOGI(__func__, "HTTP(%d): Received code: %d  Body: '%s'", count, httpCode, http.getString().c_str());
+            Display.printf("OK (%d)", httpCode);
+        }
+        else {
+            Display.printf("Failed (%s)", http.errorToString(httpCode).c_str());
         }
 
         http.end();
@@ -226,11 +236,9 @@ void setup()
     start_time = rtc_millis();
     wake_count++;
 
-    // Power up our peripherals (Do not switch both pin to output at once!)
-    pinMode(PERIPH_POWER_PIN_1, OUTPUT);
-    digitalWrite(PERIPH_POWER_PIN_1, HIGH);
-    pinMode(PERIPH_POWER_PIN_2, OUTPUT);
-    digitalWrite(PERIPH_POWER_PIN_2, HIGH);
+    // Power up our peripherals
+    pinMode(PERIPH_POWER_PIN, OUTPUT);
+    digitalWrite(PERIPH_POWER_PIN, PERIPH_POWER_PIN_LEVEL);
     delay(10); // Wait for peripherals to stabilize
 
     // Causes random crashes with wifi (once in every 50 boots or so)
@@ -242,8 +250,9 @@ void setup()
 
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     Display.begin();
+    sd_mounted = SD.begin();
 
-    if (SD.begin()) {
+    if (sd_mounted) {
         ESP_LOGI(__func__, "SD Card successfully mounted.");
     } else {
         ESP_LOGW(__func__, "Failed to mount SD Card.");
@@ -252,10 +261,11 @@ void setup()
     loadConfiguration();
 
     ESP_LOGI(__func__, "Station name: %s", STATION_NAME);
-    Display.printf("# %s #\n\n", STATION_NAME);
+    Display.printf("# %s #\n", STATION_NAME);
+    Display.printf("SD: %s | Up: %dm\n", sd_mounted ? "OK" : "FAIL", (start_time - boot_time) / 60000);
 
     if (access("/sd/firmware.bin", F_OK) != -1) {
-        firmware_upgrade("/sd/firmware.bin");
+        firmware_upgrade_from_file("/sd/firmware.bin");
     }
 }
 
@@ -267,15 +277,15 @@ void loop()
 
     if (!wifi_available) {
         ESP_LOGI(__func__, "WiFi: No configuration");
-        Display.printf("WiFi disabled!\n");
+        Display.printf("\nWiFi disabled!");
     }
     else if (!http_available) {
         ESP_LOGI(__func__, "Polling sensors");
-        // Display.printf("Polling sensors!\n");
+        // Display.printf("\nPolling sensors!");
     }
     else {
         ESP_LOGI(__func__, "WiFi: Connecting to: '%s'...", WIFI_SSID);
-        Display.printf("Connecting to\n %s...\n", WIFI_SSID);
+        Display.printf("\nConnecting to\n %s...", WIFI_SSID);
 
         esp_log_level_set("wifi", ESP_LOG_WARN); // Wifi driver is *very* verbose
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -306,6 +316,7 @@ void loop()
 
     // Now do the http request!
     if (wifi_available && http_available) {
+        Display.printf("\n");
         while (WiFi.status() != WL_CONNECTED && millis() < (WIFI_TIMEOUT * 1000)) {
             WiFi.waitStatusBits(STA_HAS_IP_BIT, 500);
             Display.printf(".");
@@ -313,7 +324,7 @@ void loop()
 
         if (WiFi.status() == WL_CONNECTED) {
             ESP_LOGI(__func__, "WiFi: Connected to: '%s' with IP %s", WIFI_SSID, WiFi.localIP().toString().c_str());
-            Display.printf("Wifi connected!\nIP: %s\n", WiFi.localIP().toString().c_str());
+            Display.printf("Connected!\nIP: %s", WiFi.localIP().toString().c_str());
 
             // Now do the HTTP Request
             httpRequest();

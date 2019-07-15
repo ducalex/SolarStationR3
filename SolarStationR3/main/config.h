@@ -3,10 +3,10 @@
 #define FACTORY_RESET_PIN 15 // Just a reminder to not use this pin
 #define WAKEUP_BUTTON_PIN 15 // Wake from deep sleep. Might use touch if it's less power-hungry
 
-// These pins are put in parallel to power all our peripherals (Sensors, Screen, SD Card).
-// A single pin might be enough, the datasheet isn't clear about the max current available.
-#define PERIPH_POWER_PIN_1 16
-#define PERIPH_POWER_PIN_2 16
+// This pin can drive peripherals directly (up to 40mA) or can drive a transistor
+// Note: It seems to drop ~0.12V from VCC, which makes some sensors and SD Card not work when VCC is 3.3 :(
+#define PERIPH_POWER_PIN 16
+#define PERIPH_POWER_PIN_LEVEL HIGH
 
 // I2C
 #define I2C_SDA_PIN 21
