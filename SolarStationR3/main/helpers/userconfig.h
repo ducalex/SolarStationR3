@@ -1,19 +1,19 @@
 #include "ConfigProvider.h"
 
-static char  STATION_NAME[64]         = "SolarStationR3";
-static int   STATION_POLL_INTERVAL    = 60;  // Seconds
-static int   STATION_POWER_SAVING     = 0;   // Not used yet
-static int   STATION_DISPLAY_TIMEOUT  = 10;  // Seconds
+static char  STATION_NAME[64]              = "SolarStationR3";
+static int   STATION_POLL_INTERVAL         = 60;  // Seconds
+static int   STATION_POWER_SAVING          = 0;   // Not used yet
+static int   STATION_DISPLAY_TIMEOUT       = 10;  // Seconds
 
-static char  WIFI_SSID[33]            = "";  // 32 per esp-idf
-static char  WIFI_PASSWORD[65]        = "";  // 64 per esp-idf
-static int   WIFI_TIMEOUT             = 10;  // Seconds
+static char  WIFI_SSID[33]                 = "";  // 32 per esp-idf
+static char  WIFI_PASSWORD[65]             = "";  // 64 per esp-idf
+static int   WIFI_TIMEOUT                  = 10;  // Seconds
 
-static char  HTTP_UPDATE_URL[128]     = "";
-static char  HTTP_UPDATE_USERNAME[64] = "";
-static char  HTTP_UPDATE_PASSWORD[64] = "";
-static int   HTTP_UPDATE_INTERVAL     = 60;  // Seconds
-static int   HTTP_UPDATE_TIMEOUT      = 30;  // Seconds
+static char  HTTP_UPDATE_URL[128]          = "";
+static char  HTTP_UPDATE_USERNAME[64]      = "";
+static char  HTTP_UPDATE_PASSWORD[64]      = "";
+static int   HTTP_UPDATE_INTERVAL          = 300; // Seconds
+static int   HTTP_UPDATE_TIMEOUT           = 30;  // Seconds
 
 static double POWER_POLL_LOW_VBAT_TRESHOLD = 3.7;  // Volts  (Maybe we should use percent so it works on any battery?)
 static double POWER_HTTP_LOW_VBAT_TRESHOLD = 3.5;  // Volts  (Maybe we should use percent so it works on any battery?)
