@@ -44,39 +44,26 @@ extern const esp_app_desc_t esp_app_desc;
         info.total_allocated_bytes / 1024, info.total_free_bytes / 1024); }
 
 
-static void ls_delay(uint32_t ms)
-{
-    ESP_LOGI(__func__, "Light sleeping for %dms", ms);
-    delay(50); // Time for the uart hardware buffer to empty
-    esp_sleep_enable_timer_wakeup((ms - 50) * 1000);
-    esp_light_sleep_start();
-}
-
-
 static void hibernate()
 {
-    PRINT_MEMORY_STATS();
-
     // Cleanup
     Display.end();
     SD.end();
 
-    // Power down our peripherals
-    pinMode(PERIPH_POWER_PIN, INPUT);
+    // See how much memory we never freed
+    PRINT_MEMORY_STATS();
 
     // Sleep
-    int interval_ms = e_poll_interval * 1000;
-    int sleep_time = interval_ms - millis();
+    int sleep_time = (e_poll_interval * 1000) - millis();
 
-    if (sleep_time < 1000) {
-        sleep_time = interval_ms > 1000 ? interval_ms : 1000;
+    if (sleep_time < 0) {
         ESP_LOGW(__func__, "Bogus sleep time, did we spend too much time processing?");
+        sleep_time = 10 * 1000; // We could continue to loop() instead but I fear memory leaks
     }
 
     ESP_LOGI(__func__, "Deep sleeping for %dms", sleep_time);
     esp_sleep_enable_timer_wakeup(sleep_time * 1000);
-    esp_sleep_enable_ext0_wakeup((gpio_num_t)WAKEUP_BUTTON_PIN, LOW);
-    //esp_sleep_enable_touchpad_wakeup();
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)WAKEUP_BUTTON_PIN, LOW); // Todo: check current usage vs touch
     esp_deep_sleep_start();
 }
 
@@ -338,10 +325,17 @@ void loop()
     }
 
 
-    if (Display.isPresent()) {
-        ls_delay(STATION_DISPLAY_TIMEOUT * 1000 - millis());
+    // Keep the screen on for a while
+    int display_timeout = STATION_DISPLAY_TIMEOUT * 1000 - millis();
+
+    if (Display.isPresent() && display_timeout > 50) {
+        ESP_LOGI(__func__, "Display will timeout in %dms (entering light-sleep)", display_timeout);
+        delay(50); // Time for the uart hardware buffer to empty
+        esp_sleep_enable_timer_wakeup((display_timeout - 50) * 1000);
+        esp_light_sleep_start();
     }
 
-    // Sleep
+
+    // Deep-sleep
     hibernate();
 }
