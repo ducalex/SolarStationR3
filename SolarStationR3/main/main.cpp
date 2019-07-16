@@ -46,6 +46,14 @@ extern const esp_app_desc_t esp_app_desc;
 
 static void hibernate()
 {
+    // If we reach this point it means the app works, let's disable rollback
+    if (esp_ota_check_rollback_is_possible()) {
+        if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
+            ESP_LOGI(__func__, "Rollback: App has now been marked as OK!");
+            esp_ota_erase_last_boot_app_partition();
+        }
+    }
+
     // Cleanup
     Display.end();
     SD.end();
@@ -68,40 +76,29 @@ static void hibernate()
 }
 
 
-static void firmware_upgrade_from_http(const char *url)
+static bool firmware_upgrade_from_stream(Stream &stream)
 {
-
-}
-
-
-static void firmware_upgrade_from_file(const char *file)
-{
-    const esp_partition_t *factory = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
-    const esp_partition_t *target = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+    const esp_partition_t *target = esp_ota_get_next_update_partition(NULL);
     const esp_partition_t *current = esp_ota_get_running_partition();
+    const esp_partition_t *factory = esp_partition_find_first(ESP_PARTITION_TYPE_APP,
+        ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
 
-    if (current->address != factory->address) {
-        // As we have a single OTA, we can only flash from factory. We reboot to it.
-        ESP_LOGI(__func__, "Rebooting to factory image");
-        esp_ota_set_boot_partition(factory);
-        esp_restart();
+    if (target == NULL) {
+        if (factory != NULL && current != factory) {
+            ESP_LOGW(__func__, "No free OTA partition. Rebooting to factory image to flash from there.");
+            esp_ota_set_boot_partition(factory);
+            esp_restart();
+        }
+        ESP_LOGE(__func__, "No free OTA partition. Cannot upgrade");
+        return false;
     }
 
-    // Danger zone
-    assert(target != NULL);
-
-    ESP_LOGI(__func__, "Flashing file %s to 0x%x", file, target->address);
-
-    FILE *fp = fopen(file, "r+");
-    if (fp == NULL) {
-        ESP_LOGE(__func__, "Unable to open file!");
-        return;
-    }
+    ESP_LOGI(__func__, "Flashing firmware to 0x%x...", target->address);
 
     Display.clear();
     Display.printf("Upgrading firmware...\n");
 
-    void *buffer = malloc(16 * 1024);
+    uint8_t *buffer = (uint8_t*)malloc(16 * 1024);
     esp_ota_handle_t ota;
     esp_err_t err;
     size_t size, count = 0;
@@ -109,7 +106,7 @@ static void firmware_upgrade_from_file(const char *file)
     err = esp_ota_begin(target, OTA_SIZE_UNKNOWN, &ota);
     if (err != ESP_OK) goto finish;
 
-    while ((size = fread(buffer, 1, 16 * 1024, fp)) > 0) {
+    while ((size = stream.readBytes(buffer, 16 * 1024)) > 0) {
         err = esp_ota_write(ota, buffer, size);
         if (err != ESP_OK) goto finish;
         Display.printf(count++ % 22 ? "." : "\n");
@@ -122,22 +119,49 @@ static void firmware_upgrade_from_file(const char *file)
     if (err != ESP_OK) goto finish;
 
   finish:
-    fclose(fp);
     free(buffer);
     if (err == ESP_OK) {
-        // Rename file after successful install
-        char new_name[64];
-        strcpy(new_name, file);
-        new_name[strlen(new_name)-4] = 0;
-        strcat(new_name, "_installed.bin");
-        unlink(new_name);
-        rename(file, new_name);
-
-        Display.printf("\n\nComplete!\n\nPlease press reset.");
+        Display.printf("\n\nComplete!");
         ESP_LOGI(__func__, "Firmware successfully flashed!");
     } else {
         ESP_LOGE(__func__, "Firmware upgrade failed: %s", esp_err_to_name(err));
-        Display.printf("\n\nFailed!\n\n%s\nPlease press reset.", esp_err_to_name(err));
+        Display.printf("\n\nFailed!\n\n%s", esp_err_to_name(err));
+    }
+    return (err == ESP_OK);
+}
+
+
+static void firmware_upgrade_from_http(const char *url)
+{
+    ESP_LOGI(__func__, "Flashing firmware from '%s'...", url);
+
+    HTTPClient http;
+
+    if (firmware_upgrade_from_stream(http.getStream())) {
+        delay(10 * 1000);
+        esp_restart();
+    }
+    vTaskDelete(NULL);
+}
+
+
+static void firmware_upgrade_from_file(const char *filePath)
+{
+    ESP_LOGI(__func__, "Flashing firmware from '%s'...", filePath);
+
+    fs::File file = SD.open(filePath);
+    if (!file) {
+        ESP_LOGE(__func__, "Unable to open file!");
+        return;
+    }
+
+    if (firmware_upgrade_from_stream(file)) {
+        file.close();
+        String new_name = String(filePath) + "-installed.bin";
+        SD.remove(new_name);
+        SD.rename(filePath, new_name);
+        delay(10 * 1000);
+        esp_restart();
     }
     vTaskDelete(NULL);
 }
@@ -251,8 +275,8 @@ void setup()
     Display.printf("# %s #\n", STATION_NAME);
     Display.printf("SD: %s | Up: %dm\n", sd_mounted ? "OK" : "FAIL", (start_time - boot_time) / 60000);
 
-    if (access("/sd/firmware.bin", F_OK) != -1) {
-        firmware_upgrade_from_file("/sd/firmware.bin");
+    if (SD.exists("/firmware.bin")) {
+        firmware_upgrade_from_file("/firmware.bin");
     }
 }
 
