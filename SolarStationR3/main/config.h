@@ -22,3 +22,24 @@
 // DHT
 #define DHT_PIN 32
 #define DHT_TYPE DHT22   // or DHT11
+
+// The load priority is: File(SD) > NVS > Default values
+// Comment both if you want to always use the values below
+#define CONFIG_USE_FILE  "/sd/config.json"
+#define CONFIG_USE_NVS   "configuration"
+
+#define DEFAULT_STATION_NAME     "SolarStationR3" // 64
+#define DEFAULT_STATION_POLL_INTERVAL         60  // Seconds
+#define DEFAULT_STATION_POWER_SAVING          0   // Not used yet
+#define DEFAULT_STATION_DISPLAY_TIMEOUT       10  // Seconds
+#define DEFAULT_WIFI_SSID                     ""  // 32 per esp-idf
+#define DEFAULT_WIFI_PASSWORD                 ""  // 64 per esp-idf
+#define DEFAULT_WIFI_TIMEOUT                  10  // Seconds
+#define DEFAULT_HTTP_UPDATE_URL               ""  // 128
+#define DEFAULT_HTTP_UPDATE_USERNAME          ""  // 64
+#define DEFAULT_HTTP_UPDATE_PASSWORD          ""  // 64
+#define DEFAULT_HTTP_UPDATE_INTERVAL          300 // Seconds
+#define DEFAULT_HTTP_UPDATE_TIMEOUT           30  // Seconds
+#define DEFAULT_POWER_POLL_LOW_VBAT_TRESHOLD  3.7 // Volts  (Maybe we should use percent so it works on any battery?)
+#define DEFAULT_POWER_HTTP_LOW_VBAT_TRESHOLD  3.5 // Volts  (Maybe we should use percent so it works on any battery?)
+#define DEFAULT_POWER_VBAT_MULTIPLIER         2.0 // Factor (If there is a voltage divider)
