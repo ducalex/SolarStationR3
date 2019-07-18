@@ -3,9 +3,11 @@
 #include "DHT.h"
 #include "../config.h"
 
-#define SENSOR(key, avgr) {key, 0, 0, avgr, 0, 0.00, 0.00, 0.00, 0.00}
+#define SENSOR(key, unit, desc, avgr) {key, unit, desc, 0, 0, avgr, 0, 0.00, 0.00, 0.00, 0.00}
 typedef struct {
     char key[8];      // Sensor key used when serializing
+    char unit[4];     //
+    char desc[16];    //
     short status;     // Status
     ulong updated;    // Last update timestamp
     short nsamples;   // Used in avg calculation
@@ -16,43 +18,42 @@ typedef struct {
     float val;        // Current value
 } SENSOR_t;
 
-static RTC_DATA_ATTR SENSOR_t m_battery_Volt      = SENSOR("bat", 10);
-static RTC_DATA_ATTR SENSOR_t m_solar_Volt        = SENSOR("sol", 10);
-static RTC_DATA_ATTR SENSOR_t m_lightsensor1_RAW  = SENSOR("l1", 10);
-static RTC_DATA_ATTR SENSOR_t m_lightsensor2_RAW  = SENSOR("l2", 10);
-static RTC_DATA_ATTR SENSOR_t m_temperature1_C    = SENSOR("t1", 10);
-static RTC_DATA_ATTR SENSOR_t m_temperature2_C    = SENSOR("t2", 10);
-static RTC_DATA_ATTR SENSOR_t m_humidity1_Pct     = SENSOR("h1", 10);
-static RTC_DATA_ATTR SENSOR_t m_humidity2_Pct     = SENSOR("h2", 10);
-static RTC_DATA_ATTR SENSOR_t m_pressure1_kPa     = SENSOR("p1", 10);
-static RTC_DATA_ATTR SENSOR_t m_pressure2_kPa     = SENSOR("p2", 10);
-static RTC_DATA_ATTR SENSOR_t m_windSpeed_kmh     = SENSOR("ws", 10);
-static RTC_DATA_ATTR SENSOR_t m_windDirection_deg = SENSOR("wd", 10);
-static RTC_DATA_ATTR SENSOR_t m_rain_RAW          = SENSOR("rain", 10);
-
-const SENSOR_t *sensors[] = {
-    &m_battery_Volt,
-    &m_solar_Volt,
-    &m_lightsensor1_RAW,
-    &m_lightsensor2_RAW,
-    &m_temperature1_C,
-    &m_temperature2_C,
-    &m_humidity1_Pct,
-    &m_humidity2_Pct,
-    &m_pressure1_kPa,
-    &m_pressure2_kPa,
-    &m_windSpeed_kmh,
-    &m_windDirection_deg,
-    &m_rain_RAW
+RTC_DATA_ATTR SENSOR_t SENSORS[] = {
+    SENSOR("bat",  "V",    "Battery",     5),
+    SENSOR("sol",  "V",    "Solar",      10),
+    SENSOR("l1",   "raw",  "Light 1",    10),
+    SENSOR("l2",   "raw",  "Light 2",    10),
+    SENSOR("t1",   "C",    "Temp 1",     10),
+    SENSOR("t2",   "C",    "Temp 2",     10),
+    SENSOR("h1",   "%",    "Humidity 1", 10),
+    SENSOR("h2",   "%",    "Humidity 2", 10),
+    SENSOR("p1",   "kPa",  "Pressure 1", 10),
+    SENSOR("p2",   "kPa",  "Pressure 2", 10),
+    SENSOR("ws",   "kmh",  "Wind Speed", 10),
+    SENSOR("wd",   "deg",  "Wind Dir.",  10),
+    SENSOR("rain", "ohm",  "Rain",       10),
 };
-const int SENSORS_COUNT = (sizeof(sensors) / sizeof(SENSOR_t*));
+const int SENSORS_COUNT = (sizeof(SENSORS) / sizeof(SENSOR_t));
 
 #define SENSOR_OK 0
 #define SENSOR_ERR_UNKNOWN -1
 #define SENSOR_ERR_TIMEOUT -2
 
-static void setSensorValue(SENSOR_t *handle, float value)
+
+static SENSOR_t *getSensor(const char* key)
 {
+    for(int i = 0; i < SENSORS_COUNT; i++) {
+        if (strcmp(key, SENSORS[i].key) == 0) {
+            return &SENSORS[i];
+        }
+    }
+    return NULL;
+}
+
+
+static void setSensorValue(const char *key, float value)
+{
+    SENSOR_t *handle = getSensor(key);
     if (handle->count + 1 < handle->nsamples)
         handle->count++;
     handle->avg = (handle->avg * ((float)(handle->count - 1) / handle->count)) + value / handle->count;
@@ -64,8 +65,9 @@ static void setSensorValue(SENSOR_t *handle, float value)
 }
 
 
-static void setSensorError(SENSOR_t *handle, short status = SENSOR_ERR_UNKNOWN)
+static void setSensorError(const char *key, short status = SENSOR_ERR_UNKNOWN)
 {
+    SENSOR_t *handle = getSensor(key);
     handle->status = status;
     handle->val = 0;
 }
@@ -76,22 +78,22 @@ static void pollSensors()
     float t = 0, h = 0, p = 0;
 
     if (dht_read(DHT_TYPE, DHT_PIN, &t, &h)) {
-        setSensorValue(&m_temperature1_C, t);
-        setSensorValue(&m_humidity1_Pct, h);
+        setSensorValue("t1", t);
+        setSensorValue("h1", h);
         ESP_LOGI(__func__, "DHT: %.2f %.2f", t, h);
     } else {
-        setSensorError(&m_temperature1_C, SENSOR_ERR_UNKNOWN);
-        setSensorError(&m_humidity1_Pct, SENSOR_ERR_UNKNOWN);
+        setSensorError("t1", SENSOR_ERR_UNKNOWN);
+        setSensorError("h1", SENSOR_ERR_UNKNOWN);
         ESP_LOGE(__func__, "DHT sensor not responding");
     }
 
     if (BMP180_read(BMP180_I2C_ADDR, &t, &p)) {
-        setSensorValue(&m_temperature2_C, t);
-        setSensorValue(&m_pressure1_kPa, p);
+        setSensorValue("t2", t);
+        setSensorValue("p1", p);
         ESP_LOGI(__func__, "BMP: %.2f %.2f", t, p);
     } else {
-        setSensorError(&m_temperature2_C, SENSOR_ERR_UNKNOWN);
-        setSensorError(&m_pressure1_kPa, SENSOR_ERR_UNKNOWN);
+        setSensorError("t2", SENSOR_ERR_UNKNOWN);
+        setSensorError("p1", SENSOR_ERR_UNKNOWN);
         ESP_LOGE(__func__, "BMP180 sensor not responding");
     }
 
@@ -103,28 +105,28 @@ static void pollSensors()
         ads.setGain(GAIN_ONE); // real range is vdd + 0.3
 
         float adc0 = 0, adc1 = 0, adc2 = 0, adc3 = 0;
-        float vbit = 0.000125, samples = 10;
+        float vbit = 0.000125;
 
         adc0 = (int16_t)ads.readADC_SingleEnded(0) * vbit;
         adc1 = (int16_t)ads.readADC_SingleEnded(1) * vbit;
         adc2 = (int16_t)ads.readADC_SingleEnded(2) * vbit;
         adc3 = (int16_t)ads.readADC_SingleEnded(3) * vbit;
 
-        setSensorValue(&m_battery_Volt, adc0 * POWER_VBAT_MULTIPLIER);
-        setSensorValue(&m_solar_Volt, adc1);
-        setSensorValue(&m_lightsensor1_RAW, adc2);
+        setSensorValue("bat", adc0 * CFG_DBL("POWER.VBAT_MULTIPLIER"));
+        setSensorValue("sol", adc1);
+        setSensorValue("l1", adc2);
         ESP_LOGI(__func__, "ADC: %.2f %.2f %.2f %.2f", adc0, adc1, adc2, adc3);
     } else {
-        setSensorError(&m_battery_Volt, SENSOR_ERR_UNKNOWN);
-        setSensorError(&m_solar_Volt, SENSOR_ERR_UNKNOWN);
-        setSensorError(&m_lightsensor1_RAW, SENSOR_ERR_UNKNOWN);
+        setSensorError("bat", SENSOR_ERR_UNKNOWN);
+        setSensorError("sol", SENSOR_ERR_UNKNOWN);
+        setSensorError("l1", SENSOR_ERR_UNKNOWN);
         ESP_LOGE(__func__, "ADS1115 sensor not responding");
     }
 
     float ws = ulp_wind_read();
     float wd = 0;
-    setSensorValue(&m_windSpeed_kmh, ws);
-    setSensorValue(&m_windDirection_deg, wd);
+    setSensorValue("ws", ws);
+    setSensorValue("wd", wd);
     ESP_LOGI(__func__, "WIND: %d %d", (int)ws, (int)wd);
 }
 
@@ -134,8 +136,8 @@ static void packSensors(float *outFrame, uint32_t *outStatus)
     *outStatus = 0;
 
     for (int i = 0; i < SENSORS_COUNT; i++) {
-        outFrame[i] = sensors[i]->val;
-        if (sensors[i]->status != 0) {
+        outFrame[i] = SENSORS[i].val;
+        if (SENSORS[i].status != 0) {
             *outStatus |= (1 << i);
         }
     }
@@ -146,18 +148,18 @@ static char* serializeSensors(float *frame)
 {
     char *outBuffer = (char*)calloc(SENSORS_COUNT * 16, 1);
     for (int i = 0; i < SENSORS_COUNT; i++) {
-        sprintf(outBuffer + strlen(outBuffer), "&%s=%.4f", sensors[i]->key, frame[i]);
+        sprintf(outBuffer + strlen(outBuffer), "&%s=%.4f", SENSORS[i].key, frame[i]);
     }
     return outBuffer;
 }
 
-
+#define P_SENS(key) getSensor(key)->val, getSensor(key)->unit
 static void displaySensors()
 {
-    Display.printf("\nVolt: %.2f %.2f", m_battery_Volt.val, m_solar_Volt.val);
-    Display.printf("\nLight: %d %d", (int16_t)m_lightsensor1_RAW.val, (int16_t)m_lightsensor2_RAW.val);
-    Display.printf("\nTemp: %.2f %.2f", m_temperature1_C.val, m_temperature2_C.val);
-    Display.printf("\nHumidity: %.0f %.0f", m_humidity1_Pct.val, m_humidity2_Pct.val);
-    Display.printf("\nPressure: %.2f %.2f", m_pressure1_kPa.val, m_pressure2_kPa.val);
-    Display.printf("\nWind: %d %d", (int)m_windSpeed_kmh.val, (int)m_windDirection_deg.val);
+    Display.printf("\nVolt: %.2f%s %.2f%s", P_SENS("bat"), P_SENS("sol"));
+    Display.printf("\nLight: %.0f%s %.0f%s", P_SENS("l1"), P_SENS("l2"));
+    Display.printf("\nTemp: %.2f%s %.2f%s", P_SENS("t1"), P_SENS("t2"));
+    Display.printf("\nHumidity: %.0f%s %.0f%s", P_SENS("h1"), P_SENS("h2"));
+    Display.printf("\nPres: %.2f%s %.2f%s", P_SENS("p1"), P_SENS("p2"));
+    Display.printf("\nWind: %.2f%s %.2f%s", P_SENS("ws"), P_SENS("wd"));
 }

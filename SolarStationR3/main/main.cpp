@@ -29,9 +29,8 @@ RTC_DATA_ATTR static uint32_t start_time = 0;
 RTC_DATA_ATTR static uint32_t next_http_update = 0;
 RTC_DATA_ATTR static http_item_t http_queue[HTTP_QUEUE_MAX_ITEMS];
 RTC_DATA_ATTR static uint16_t http_queue_pos = 0;
-
-static uint32_t e_poll_interval; // Effective interval. Normally = STATION_POLL_INTERVAL
-static uint32_t e_http_interval; // Effective interval. Normally = HTTP_UPDATE_INTERVAL
+static int STATION_POLL_INTERVAL = DEFAULT_STATION_POLL_INTERVAL;
+static int HTTP_UPDATE_INTERVAL = DEFAULT_HTTP_UPDATE_INTERVAL;
 
 extern const esp_app_desc_t esp_app_desc;
 
@@ -55,12 +54,13 @@ static void hibernate()
 
     // Cleanup
     Display.end();
+    SD.end();
 
     // See how much memory we never freed
     PRINT_MEMORY_STATS();
 
     // Sleep
-    int sleep_time = (e_poll_interval * 1000) - millis();
+    int sleep_time = (STATION_POLL_INTERVAL * 1000) - millis();
 
     if (sleep_time < 0) {
         ESP_LOGW(__func__, "Bogus sleep time, did we spend too much time processing?");
@@ -167,9 +167,13 @@ static void firmware_upgrade_from_file(const char *filePath)
 
 static void httpRequest()
 {
-    ESP_LOGI(__func__, "HTTP: POST request(s) to '%s'...", HTTP_UPDATE_URL);
+    char *url = CFG_STR("HTTP.UPDATE_URL"), *username = CFG_STR("HTTP.UPDATE_USERNAME");
+    char *password = CFG_STR("HTTP.UPDATE_PASSWORD");
+    uint  timeout_ms = CFG_INT("HTTP.UPDATE_TIMEOUT") * 1000;
 
-    short count = 0;
+    ESP_LOGI(__func__, "HTTP: POST request(s) to '%s'...", url);
+
+    uint count = 0;
     char payload[512];
 
     for (int i = 0; i < HTTP_QUEUE_MAX_ITEMS; i++) {
@@ -183,21 +187,22 @@ static void httpRequest()
 
         HTTPClient http; // I don't know if it is reusable
 
-        http.begin(HTTP_UPDATE_URL);
-        http.setTimeout(HTTP_UPDATE_TIMEOUT * 1000);
+        http.begin(url);
+        http.setTimeout(timeout_ms);
         http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-        if (strlen(HTTP_UPDATE_USERNAME) > 0) {
-            http.setAuthorization(HTTP_UPDATE_USERNAME, HTTP_UPDATE_PASSWORD);
+        if (strlen(username) > 0) {
+            http.setAuthorization(username, password);
         }
 
         char *sensors_data = serializeSensors(item->sensors_data);
 
-        sprintf(payload, "station=%s&app=%s+%s&ps_http=%.2f&ps_poll=%.2f&uptime=%d" "&offset=%d&cycles=%d&status=%d&%s",
-            STATION_NAME,                 // Current station name
+        sprintf(payload,
+            "station=%s&app=%s+%s&ps_http=%.2f&ps_poll=%.2f&uptime=%d" "&offset=%d&cycles=%d&status=%d&%s",
+            CFG_STR("STATION.NAME"),                 // Current station name
             PROJECT_VERSION,              // Build version information
             esp_app_desc.version,         // Build version information
-            (float)e_poll_interval / STATION_POLL_INTERVAL, // Current power saving mode
-            (float)e_http_interval / HTTP_UPDATE_INTERVAL,  // Current power saving mode
+            (float)STATION_POLL_INTERVAL / CFG_INT("STATION.POLL_INTERVAL"), // Current power saving mode
+            (float)HTTP_UPDATE_INTERVAL / CFG_INT("HTTP.UPDATE_INTERVAL"),  // Current power saving mode
             start_time - boot_time,       // Current uptime (ms)
             item->timestamp - start_time, // Age of entry relative to now (ms)
             item->wake_count,             // Wake count at time of capture
@@ -209,14 +214,15 @@ static void httpRequest()
         Display.printf("\nHTTP POST...");
 
         ESP_LOGI(__func__, "HTTP(%d): Sending body: '%s'", count, payload);
-        int httpCode = http.POST(payload);
+        const int httpCode = http.POST(payload);
+        const char *httpBody = http.getString().c_str();
 
         if (httpCode >= 400) {
-            ESP_LOGW(__func__, "HTTP(%d): Received code: %d  Body: '%s'", count, httpCode, http.getString().c_str());
+            ESP_LOGW(__func__, "HTTP(%d): Received code: %d  Body: '%s'", count, httpCode, httpBody);
             Display.printf("Failed (%d)", httpCode);
         }
         else if (httpCode > 0) {
-            ESP_LOGI(__func__, "HTTP(%d): Received code: %d  Body: '%s'", count, httpCode, http.getString().c_str());
+            ESP_LOGI(__func__, "HTTP(%d): Received code: %d  Body: '%s'", count, httpCode, httpBody);
             Display.printf("OK (%d)", httpCode);
         }
         else {
@@ -227,7 +233,7 @@ static void httpRequest()
         memset(item, 0, sizeof(http_item_t)); // Or do it only on success?
     }
 
-    next_http_update = start_time + (e_http_interval * 1000);
+    next_http_update = start_time + (HTTP_UPDATE_INTERVAL * 1000);
 }
 
 
@@ -254,6 +260,8 @@ void setup()
     Display.begin();
 
     if (wake_count == 1) {
+        ulp_wind_start();
+
         if (SD.begin()) {
             ESP_LOGI(__func__, "SD Card successfully mounted.");
             if (SD.exists("firmware.bin")) {
@@ -262,23 +270,23 @@ void setup()
         } else {
             ESP_LOGW(__func__, "Failed to mount SD Card.");
         }
-
-        loadConfiguration();
-        ulp_wind_start();
-
-        SD.end();
     }
 
-    ESP_LOGI(__func__, "Station name: %s", STATION_NAME);
-    Display.printf("# %s #\n", STATION_NAME);
+    loadConfiguration();
+
+    ESP_LOGI(__func__, "Station name: %s", CFG_STR("STATION.NAME"));
+    Display.printf("# %s #\n", CFG_STR("STATION.NAME"));
     Display.printf("SD: %s | Up: %dm\n", "?", (start_time - boot_time) / 60000);
 }
 
 
 void loop()
 {
-    bool wifi_available = strlen(WIFI_SSID) > 0;
-    bool http_available = strlen(HTTP_UPDATE_URL) > 0 && start_time >= next_http_update;
+    const char *wifi_ssid = CFG_STR("WIFI.SSID"), *wifi_password = CFG_STR("WIFI.PASSWORD");
+    const int  wifi_timeout_ms = CFG_INT("WIFI.TIMEOUT") * 1000;
+
+    const bool wifi_available = strlen(wifi_ssid) > 0;
+    const bool http_available = strlen(CFG_STR("HTTP.UPDATE_URL")) > 0 && start_time >= next_http_update;
 
     if (!wifi_available) {
         ESP_LOGI(__func__, "WiFi: No configuration");
@@ -289,11 +297,11 @@ void loop()
         // Display.printf("\nPolling sensors!");
     }
     else {
-        ESP_LOGI(__func__, "WiFi: Connecting to: '%s'...", WIFI_SSID);
-        Display.printf("\nConnecting to\n %s...", WIFI_SSID);
+        ESP_LOGI(__func__, "WiFi: Connecting to: '%s'...", wifi_ssid);
+        Display.printf("\nConnecting to\n %s...", wifi_ssid);
 
         esp_log_level_set("wifi", ESP_LOG_WARN); // Wifi driver is *very* verbose
-        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+        WiFi.begin(wifi_ssid, wifi_password);
         WiFi.setSleep(true);
     }
 
@@ -312,30 +320,35 @@ void loop()
 
 
     // Adjust our intervals based on the battery we've just read
-    e_poll_interval = POWER_SAVE_INTERVAL(STATION_POLL_INTERVAL, POWER_POLL_LOW_VBAT_TRESHOLD, m_battery_Volt.avg);
-    e_http_interval = POWER_SAVE_INTERVAL(HTTP_UPDATE_INTERVAL, POWER_HTTP_LOW_VBAT_TRESHOLD, m_battery_Volt.avg);
+    float vbat = getSensor("bat")->avg; // We use avg so it doesn't bounce around too much
+    STATION_POLL_INTERVAL = POWER_SAVE_INTERVAL(
+        CFG_INT("STATION.POLL_INTERVAL"), CFG_DBL("POWER.POLL_LOW_VBAT_TRESHOLD"), vbat);
+    HTTP_UPDATE_INTERVAL = POWER_SAVE_INTERVAL(
+        CFG_INT("HTTP.UPDATE_INTERVAL"), CFG_DBL("POWER.HTTP_LOW_VBAT_TRESHOLD"), vbat);
 
     ESP_LOGI(__func__, "Effective intervals: poll: %d (%d), http: %d (%d), vbat: %.2f",
-        e_poll_interval, STATION_POLL_INTERVAL, e_http_interval, HTTP_UPDATE_INTERVAL, m_battery_Volt.avg);
+        STATION_POLL_INTERVAL, CFG_INT("STATION.POLL_INTERVAL"),
+        HTTP_UPDATE_INTERVAL, CFG_INT("HTTP.UPDATE_INTERVAL"), vbat);
 
 
     // Now do the http request!
     if (wifi_available && http_available) {
         Display.printf("\n");
-        while (WiFi.status() != WL_CONNECTED && millis() < (WIFI_TIMEOUT * 1000)) {
+        while (WiFi.status() != WL_CONNECTED && millis() < wifi_timeout_ms) {
             WiFi.waitStatusBits(STA_HAS_IP_BIT, 500);
             Display.printf(".");
         }
 
         if (WiFi.status() == WL_CONNECTED) {
-            ESP_LOGI(__func__, "WiFi: Connected to: '%s' with IP %s", WIFI_SSID, WiFi.localIP().toString().c_str());
-            Display.printf("Connected!\nIP: %s", WiFi.localIP().toString().c_str());
+            String local_ip = WiFi.localIP().toString();
+            ESP_LOGI(__func__, "WiFi: Connected to: '%s' with IP %s", wifi_ssid, local_ip.c_str());
+            Display.printf("Connected!\nIP: %s", local_ip.c_str());
 
             // Now do the HTTP Request
             httpRequest();
         }
         else {
-            ESP_LOGW(__func__, "WiFi: Failed to connect to: '%s'", WIFI_SSID);
+            ESP_LOGW(__func__, "WiFi: Failed to connect to: '%s'", wifi_ssid);
             Display.printf("\nFailed!");
         }
         WiFi.disconnect(true);
@@ -344,7 +357,7 @@ void loop()
 
 
     // Keep the screen on for a while
-    int display_timeout = STATION_DISPLAY_TIMEOUT * 1000 - millis();
+    int display_timeout = CFG_INT("STATION.DISPLAY_TIMEOUT") * 1000 - millis();
 
     if (Display.isPresent() && display_timeout > 50) {
         ESP_LOGI(__func__, "Display will timeout in %dms (entering light-sleep)", display_timeout);
