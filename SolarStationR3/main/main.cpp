@@ -35,7 +35,7 @@ static uint32_t e_http_interval; // Effective interval. Normally = HTTP_UPDATE_I
 
 extern const esp_app_desc_t esp_app_desc;
 
-#define POWER_SAVE_INTERVAL(in, th, vb) (((float)th <= vb || vb < 2) ? in : (uint)ceil(((th-vb) * 100.00) * in))
+#define POWER_SAVE_INTERVAL(in, th, vb) (((float)th <= vb || vb < 2) ? in : (uint)ceil(((th-vb) * 10.00) * in))
 #define PRINT_MEMORY_STATS() { \
   multi_heap_info_t info; \
   heap_caps_get_info(&info, MALLOC_CAP_DEFAULT); \
