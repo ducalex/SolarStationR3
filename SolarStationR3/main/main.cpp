@@ -8,12 +8,12 @@
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "config.h"
-// Most of these should have their own .cpp file, but I'm lazy :(
-#include "helpers/userconfig.h"
-#include "helpers/time.h"
-#include "helpers/ulp.h"
-#include "helpers/display.h"
-#include "helpers/sensors.h"
+
+#include "includes/userconfig.h"
+#include "includes/time.h"
+#include "includes/ulp.h"
+#include "includes/display.h"
+#include "includes/sensors.h"
 
 #define HTTP_QUEUE_MAX_ITEMS 40
 typedef struct {
@@ -167,9 +167,8 @@ static void firmware_upgrade_from_file(const char *filePath)
 
 static void httpRequest()
 {
-    char *url = CFG_STR("HTTP.UPDATE_URL"), *username = CFG_STR("HTTP.UPDATE_USERNAME");
-    char *password = CFG_STR("HTTP.UPDATE_PASSWORD");
-    uint  timeout_ms = CFG_INT("HTTP.UPDATE_TIMEOUT") * 1000;
+    char *url = CFG_STR("HTTP.UPDATE.URL"), *username = CFG_STR("HTTP.UPDATE.USERNAME");
+    char *password = CFG_STR("HTTP.UPDATE.PASSWORD");
 
     ESP_LOGI(__func__, "HTTP: POST request(s) to '%s'...", url);
 
@@ -188,7 +187,7 @@ static void httpRequest()
         HTTPClient http; // I don't know if it is reusable
 
         http.begin(url);
-        http.setTimeout(timeout_ms);
+        http.setTimeout(CFG_INT("HTTP.TIMEOUT") * 1000);
         http.addHeader("Content-Type", "application/x-www-form-urlencoded");
         if (strlen(username) > 0) {
             http.setAuthorization(username, password);
@@ -202,7 +201,7 @@ static void httpRequest()
             PROJECT_VERSION,              // Build version information
             esp_app_desc.version,         // Build version information
             (float)STATION_POLL_INTERVAL / CFG_INT("STATION.POLL_INTERVAL"), // Current power saving mode
-            (float)HTTP_UPDATE_INTERVAL / CFG_INT("HTTP.UPDATE_INTERVAL"),  // Current power saving mode
+            (float)HTTP_UPDATE_INTERVAL / CFG_INT("HTTP.UPDATE.INTERVAL"),  // Current power saving mode
             start_time - boot_time,       // Current uptime (ms)
             item->timestamp - start_time, // Age of entry relative to now (ms)
             item->wake_count,             // Wake count at time of capture
@@ -286,7 +285,7 @@ void loop()
     const int  wifi_timeout_ms = CFG_INT("WIFI.TIMEOUT") * 1000;
 
     const bool wifi_available = strlen(wifi_ssid) > 0;
-    const bool http_available = strlen(CFG_STR("HTTP.UPDATE_URL")) > 0 && start_time >= next_http_update;
+    const bool http_available = strlen(CFG_STR("HTTP.UPDATE.URL")) > 0 && start_time >= next_http_update;
 
     if (!wifi_available) {
         ESP_LOGI(__func__, "WiFi: No configuration");
@@ -324,11 +323,11 @@ void loop()
     STATION_POLL_INTERVAL = POWER_SAVE_INTERVAL(
         CFG_INT("STATION.POLL_INTERVAL"), CFG_DBL("POWER.POLL_LOW_VBAT_TRESHOLD"), vbat);
     HTTP_UPDATE_INTERVAL = POWER_SAVE_INTERVAL(
-        CFG_INT("HTTP.UPDATE_INTERVAL"), CFG_DBL("POWER.HTTP_LOW_VBAT_TRESHOLD"), vbat);
+        CFG_INT("HTTP.UPDATE.INTERVAL"), CFG_DBL("POWER.HTTP_LOW_VBAT_TRESHOLD"), vbat);
 
     ESP_LOGI(__func__, "Effective intervals: poll: %d (%d), http: %d (%d), vbat: %.2f",
         STATION_POLL_INTERVAL, CFG_INT("STATION.POLL_INTERVAL"),
-        HTTP_UPDATE_INTERVAL, CFG_INT("HTTP.UPDATE_INTERVAL"), vbat);
+        HTTP_UPDATE_INTERVAL, CFG_INT("HTTP.UPDATE.INTERVAL"), vbat);
 
 
     // Now do the http request!
