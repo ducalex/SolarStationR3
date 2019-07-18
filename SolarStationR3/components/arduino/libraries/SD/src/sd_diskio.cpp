@@ -134,7 +134,7 @@ char sdCommand(uint8_t pdrv, char cmd, unsigned int arg, unsigned int* resp)
         }
 
         if (token == 0xFF) {
-            log_i("no token received");
+            log_d("no token received");
             sdDeselectCard(pdrv);
             delay(100);
             sdSelectCard(pdrv);

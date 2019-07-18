@@ -23,6 +23,9 @@
 #define DHT_PIN 32
 #define DHT_TYPE DHT22   // or DHT11
 
+// ANEMOMETER
+#define ANEMOMETER_PIN 33
+
 // The load priority is: File(SD) > NVS > Default values
 // Comment both if you want to always use the values below
 #define CONFIG_USE_FILE  "/sd/config.json"

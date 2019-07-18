@@ -4,7 +4,6 @@
 #include "ConfigProvider.h"
 #include "SD.h"
 #include "esp_log.h"
-#include "esp_pm.h"
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
@@ -12,6 +11,7 @@
 // Most of these should have their own .cpp file, but I'm lazy :(
 #include "helpers/userconfig.h"
 #include "helpers/time.h"
+#include "helpers/ulp.h"
 #include "helpers/display.h"
 #include "helpers/sensors.h"
 
@@ -242,6 +242,7 @@ void setup()
 
     if (boot_time == 0) {
         boot_time = rtc_millis();
+        ulp_wind_start();
     }
 
     start_time = rtc_millis();
@@ -275,8 +276,8 @@ void setup()
     Display.printf("# %s #\n", STATION_NAME);
     Display.printf("SD: %s | Up: %dm\n", sd_mounted ? "OK" : "FAIL", (start_time - boot_time) / 60000);
 
-    if (SD.exists("/firmware.bin")) {
-        firmware_upgrade_from_file("/firmware.bin");
+    if (sd_mounted && SD.exists("firmware.bin")) {
+        firmware_upgrade_from_file("firmware.bin");
     }
 }
 

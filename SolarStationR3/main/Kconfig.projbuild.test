@@ -1,0 +1,71 @@
+menu "SolarStation Configuration"
+
+config STATION_USE_CONFIG_FILE
+    bool "Use configuration file"
+    default "y"
+
+config STATION_USE_CONFIG_NVS
+    bool "Use NVS to store configuration"
+    default "y"
+
+config STATION_STATION_NAME
+    string "Solar Station name"
+    default "SolarStationR3"
+
+config STATION_STATION_POLL_INTERVAL
+    int "Sensors poll interval"
+    default 60
+
+config STATION_STATION_POWER_SAVING
+    int "Power saving mode (not used yet)"
+    default 0
+
+config STATION_STATION_DISPLAY_TIMEOUT
+    int "Display timeout"
+    default 10
+
+config STATION_WIFI_SSID
+    string "Wifi SSID"
+    default ""
+
+config STATION_WIFI_PASSWORD
+    string "Wifi Password"
+    default ""
+
+config STATION_WIFI_TIMEOUT
+    int "WIFI Timeout"
+    default 10
+
+config STATION_HTTP_UPDATE_URL
+    string "HTTP Update URL"
+    default ""
+
+config STATION_HTTP_UPDATE_USERNAME
+    string "HTTP Update Username"
+    default ""
+
+config STATION_HTTP_UPDATE_PASSWORD
+    string "HTTP Update password"
+    default ""
+
+config STATION_HTTP_UPDATE_INTERVAL
+    int "HTTP Update interval"
+    default 300
+
+config STATION_HTTP_UPDATE_TIMEOUT
+    int "HTTP Update timeout"
+    default 30
+
+config STATION_POWER_POLL_LOW_VBAT_TRESHOLD
+    int "Sensors power saving treshold (VBAT)"
+    default 3.7
+
+config STATION_POWER_HTTP_LOW_VBAT_TRESHOLD
+    int "HTTP power saving treshold (VBAT)"
+    default 3.5
+
+config STATION_POWER_VBAT_MULTIPLIER
+    int "VBAT Multiplier (Voltage divider)"
+    default 2.0
+
+endmenu

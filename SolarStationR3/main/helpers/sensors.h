@@ -120,6 +120,12 @@ static void pollSensors()
         setSensorError(&m_lightsensor1_RAW, SENSOR_ERR_UNKNOWN);
         ESP_LOGE(__func__, "ADS1115 sensor not responding");
     }
+
+    float ws = ulp_wind_read();
+    float wd = 0;
+    setSensorValue(&m_windSpeed_kmh, ws);
+    setSensorValue(&m_windDirection_deg, wd);
+    ESP_LOGI(__func__, "WIND: %d %d", (int)ws, (int)wd);
 }
 
 
@@ -153,4 +159,5 @@ static void displaySensors()
     Display.printf("\nTemp: %.2f %.2f", m_temperature1_C.val, m_temperature2_C.val);
     Display.printf("\nHumidity: %.0f %.0f", m_humidity1_Pct.val, m_humidity2_Pct.val);
     Display.printf("\nPressure: %.2f %.2f", m_pressure1_kPa.val, m_pressure2_kPa.val);
+    Display.printf("\nWind: %d %d", (int)m_windSpeed_kmh.val, (int)m_windDirection_deg.val);
 }
