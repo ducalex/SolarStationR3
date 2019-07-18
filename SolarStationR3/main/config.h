@@ -26,11 +26,8 @@
 // ANEMOMETER
 #define ANEMOMETER_PIN 33
 
-// The load priority is: File(SD) > NVS > Default values
-// Comment both if you want to always use the values below
-#define CONFIG_USE_FILE  "/sd/config.json"
-#define CONFIG_USE_NVS   "configuration"
-
+// If you rely on those settings don't forget to make erase_flash
+// Otherwise the NVS will have priority
 #define DEFAULT_STATION_NAME     "SolarStationR3" // 64
 #define DEFAULT_STATION_POLL_INTERVAL         60  // Seconds
 #define DEFAULT_STATION_POWER_SAVING          0   // Not used yet

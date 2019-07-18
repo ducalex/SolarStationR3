@@ -32,7 +32,6 @@ RTC_DATA_ATTR static uint16_t http_queue_pos = 0;
 
 static uint32_t e_poll_interval; // Effective interval. Normally = STATION_POLL_INTERVAL
 static uint32_t e_http_interval; // Effective interval. Normally = HTTP_UPDATE_INTERVAL
-static bool sd_mounted = false;
 
 extern const esp_app_desc_t esp_app_desc;
 
@@ -56,7 +55,6 @@ static void hibernate()
 
     // Cleanup
     Display.end();
-    SD.end();
 
     // See how much memory we never freed
     PRINT_MEMORY_STATS();
@@ -242,7 +240,6 @@ void setup()
 
     if (boot_time == 0) {
         boot_time = rtc_millis();
-        ulp_wind_start();
     }
 
     start_time = rtc_millis();
@@ -253,32 +250,28 @@ void setup()
     digitalWrite(PERIPH_POWER_PIN, PERIPH_POWER_PIN_LEVEL);
     delay(10); // Wait for peripherals to stabilize
 
-    // Causes random crashes with wifi (once in every 50 boots or so)
-    // esp_pm_config_esp32_t pm_config;
-    //     pm_config.max_freq_mhz = 160;
-    //     pm_config.min_freq_mhz = 160;
-    //     pm_config.light_sleep_enable = true;
-    // esp_pm_configure(&pm_config);
-
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     Display.begin();
-    sd_mounted = SD.begin();
 
-    if (sd_mounted) {
-        ESP_LOGI(__func__, "SD Card successfully mounted.");
-    } else {
-        ESP_LOGW(__func__, "Failed to mount SD Card.");
+    if (wake_count == 1) {
+        if (SD.begin()) {
+            ESP_LOGI(__func__, "SD Card successfully mounted.");
+            if (SD.exists("firmware.bin")) {
+                firmware_upgrade_from_file("firmware.bin");
+            }
+        } else {
+            ESP_LOGW(__func__, "Failed to mount SD Card.");
+        }
+
+        loadConfiguration();
+        ulp_wind_start();
+
+        SD.end();
     }
-
-    loadConfiguration();
 
     ESP_LOGI(__func__, "Station name: %s", STATION_NAME);
     Display.printf("# %s #\n", STATION_NAME);
-    Display.printf("SD: %s | Up: %dm\n", sd_mounted ? "OK" : "FAIL", (start_time - boot_time) / 60000);
-
-    if (sd_mounted && SD.exists("firmware.bin")) {
-        firmware_upgrade_from_file("firmware.bin");
-    }
+    Display.printf("SD: %s | Up: %dm\n", "?", (start_time - boot_time) / 60000);
 }
 
 

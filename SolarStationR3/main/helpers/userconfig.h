@@ -1,23 +1,26 @@
 #include "ConfigProvider.h"
 
-static char  STATION_NAME[64];               //
-static int   STATION_POLL_INTERVAL;          // Seconds
-static int   STATION_POWER_SAVING;           // Not used
-static int   STATION_DISPLAY_TIMEOUT;        // Seconds
+RTC_DATA_ATTR static char  STATION_NAME[64];               //
+RTC_DATA_ATTR static int   STATION_POLL_INTERVAL;          // Seconds
+RTC_DATA_ATTR static int   STATION_POWER_SAVING;           // Not used
+RTC_DATA_ATTR static int   STATION_DISPLAY_TIMEOUT;        // Seconds
 
-static char  WIFI_SSID[33];                  // 32 as per esp-idf
-static char  WIFI_PASSWORD[65];              // 64 as per esp-idf
-static int   WIFI_TIMEOUT;                   // Seconds
+RTC_DATA_ATTR static char  WIFI_SSID[33];                  // 32 as per esp-idf
+RTC_DATA_ATTR static char  WIFI_PASSWORD[65];              // 64 as per esp-idf
+RTC_DATA_ATTR static int   WIFI_TIMEOUT;                   // Seconds
 
-static char  HTTP_UPDATE_URL[128];           //
-static char  HTTP_UPDATE_USERNAME[64];       //
-static char  HTTP_UPDATE_PASSWORD[64];       //
-static int   HTTP_UPDATE_INTERVAL;           // Seconds
-static int   HTTP_UPDATE_TIMEOUT;            // Seconds
+RTC_DATA_ATTR static char  HTTP_UPDATE_URL[128];           //
+RTC_DATA_ATTR static char  HTTP_UPDATE_USERNAME[64];       //
+RTC_DATA_ATTR static char  HTTP_UPDATE_PASSWORD[64];       //
+RTC_DATA_ATTR static int   HTTP_UPDATE_INTERVAL;           // Seconds
+RTC_DATA_ATTR static int   HTTP_UPDATE_TIMEOUT;            // Seconds
 
-static double POWER_POLL_LOW_VBAT_TRESHOLD;  // Volts  (Maybe we should use percent so it works on any battery?)
-static double POWER_HTTP_LOW_VBAT_TRESHOLD;  // Volts  (Maybe we should use percent so it works on any battery?)
-static double POWER_VBAT_MULTIPLIER;         // Factor (If there is a voltage divider)
+RTC_DATA_ATTR static double POWER_POLL_LOW_VBAT_TRESHOLD;  // Volts  (Maybe we should use percent so it works on any battery?)
+RTC_DATA_ATTR static double POWER_HTTP_LOW_VBAT_TRESHOLD;  // Volts  (Maybe we should use percent so it works on any battery?)
+RTC_DATA_ATTR static double POWER_VBAT_MULTIPLIER;         // Factor (If there is a voltage divider)
+
+static const char *CONFIG_USE_FILE = "/sd/config.json";
+static const char *CONFIG_USE_NVS = "configuration";
 
 static ConfigProvider config;
 
@@ -42,23 +45,14 @@ void saveConfiguration(bool update_only)
     config.setDouble("power.poll_low_battery_treshold", POWER_HTTP_LOW_VBAT_TRESHOLD);
     config.setDouble("power.vbat_multiplier", POWER_VBAT_MULTIPLIER);
 
-    #ifdef CONFIG_USE_FILE
-        config.saveFile(CONFIG_USE_FILE, update_only);
-    #endif
-    #ifdef CONFIG_USE_NVS
-        config.saveNVS(CONFIG_USE_NVS, update_only);
-    #endif
+    config.saveFile(CONFIG_USE_FILE, update_only);
+    config.saveNVS(CONFIG_USE_NVS, update_only);
 }
 
 void loadConfiguration()
 {
-    #ifdef CONFIG_USE_FILE
-    if (!config.loadFile(CONFIG_USE_FILE))
-    #endif
-    {
-    #ifdef CONFIG_USE_NVS
+    if (!config.loadFile(CONFIG_USE_FILE)) {
         config.loadNVS(CONFIG_USE_NVS);
-    #endif
     }
 
     // cJSON has a weird handling of NULL, it's better to pass an empty string if we
