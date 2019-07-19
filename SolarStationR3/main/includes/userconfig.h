@@ -46,6 +46,7 @@ void loadConfiguration()
     CFG_LOAD_INT("http.ota.enabled", 1);
     CFG_LOAD_INT("http.timeout", DEFAULT_HTTP_TIMEOUT);
 
+    CFG_LOAD_DBL("power.power_save_strategy", DEFAULT_POWER_POWER_SAVE_STRATEGY);
     CFG_LOAD_DBL("power.poll_low_vbat_treshold", DEFAULT_POWER_POLL_LOW_VBAT_TRESHOLD);
     CFG_LOAD_DBL("power.http_low_vbat_treshold", DEFAULT_POWER_HTTP_LOW_VBAT_TRESHOLD);
     CFG_LOAD_DBL("power.vbat_multiplier", DEFAULT_POWER_VBAT_MULTIPLIER);

@@ -1,7 +1,7 @@
 #define PROJECT_VERSION "1.0-dev"
 
 #define FACTORY_RESET_PIN 15 // Just a reminder to not use this pin
-#define WAKEUP_BUTTON_PIN 15 // Wake from deep sleep. Might use touch if it's less power-hungry
+#define ACTION_BUTTON_PIN 13
 
 // This pin can drive peripherals directly (up to 40mA) or can drive a transistor
 // Note: It seems to drop ~0.12V from VCC, which makes some sensors and SD Card not work when VCC is 3.3 :(
@@ -38,7 +38,8 @@
 #define DEFAULT_HTTP_UPDATE_USERNAME          ""  // 64
 #define DEFAULT_HTTP_UPDATE_PASSWORD          ""  // 64
 #define DEFAULT_HTTP_UPDATE_INTERVAL          300 // Seconds
-#define DEFAULT_HTTP_TIMEOUT                  30  // Seconds
+#define DEFAULT_HTTP_TIMEOUT                   30  // Seconds
+#define DEFAULT_POWER_POWER_SAVE_STRATEGY       0 // Not used yet
 #define DEFAULT_POWER_POLL_LOW_VBAT_TRESHOLD  3.7 // Volts  (Maybe we should use percent so it works on any battery?)
 #define DEFAULT_POWER_HTTP_LOW_VBAT_TRESHOLD  3.5 // Volts  (Maybe we should use percent so it works on any battery?)
 #define DEFAULT_POWER_VBAT_MULTIPLIER         2.0 // Factor (If there is a voltage divider)
