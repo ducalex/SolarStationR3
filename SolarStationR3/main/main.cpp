@@ -1,6 +1,7 @@
 #include "Arduino.h"
 #include "WiFi.h"
 #include "HTTPClient.h"
+#include "WebServer.h"
 #include "ConfigProvider.h"
 #include "SD.h"
 #include "esp_log.h"
@@ -69,8 +70,86 @@ static void hibernate()
 
     ESP_LOGI(__func__, "Deep sleeping for %dms", sleep_time);
     esp_sleep_enable_timer_wakeup(sleep_time * 1000);
-    esp_sleep_enable_ext0_wakeup((gpio_num_t)WAKEUP_BUTTON_PIN, LOW); // Todo: check current usage vs touch
     esp_deep_sleep_start();
+}
+
+
+static void startAccessPoint()
+{
+    const char *AP_SSID = CFG_STR("STATION.NAME");
+    const IPAddress AP_IP = IPAddress(1, 1, 1, 1);
+
+    ESP_LOGI("AP", "Starting Configuration access point");
+
+    if (WiFi.softAPConfig(AP_IP, AP_IP, IPAddress(255, 0, 0, 0)) && WiFi.softAP(AP_SSID)) {
+        ESP_LOGI("AP", "SSID: %s   IP: %s", AP_SSID, AP_IP.toString().c_str());
+    } else {
+        ESP_LOGE("AP", "Unable to start the access point");
+        return;
+    }
+
+    SD.begin();
+    WebServer server(80);
+    server.on("/", [&server]() {
+        if (server.hasArg("restart")) {
+            server.send(200, "text/plain", "Goodbye!");
+            delay(1000);
+            WiFi.softAPdisconnect(true);
+            esp_restart();
+        }
+
+        String page = "<html><head>";
+        page += "<meta name=viewport content='width=device-width, initial-scale=0'>";
+        page += "<style>input{font-size:2em;}textarea{width:100%; height:80%;}</style>";
+        page += "</head><body>";
+        if (server.method() == HTTP_POST) {
+            if (config.loadJSON(server.arg("config").c_str())) {
+                saveConfiguration(true);
+                page += "<h2>Configuration saved!</h2>";
+            } else {
+                page += "<h2>Invalid JSON!</h2>";
+            }
+        } else {
+            page += "<h2>Hello!</h2>";
+        }
+        page += "<form method='post'><div>";
+        page += "<textarea name='config'>";
+        page += config.saveJSON();
+        page += "</textarea></div>";
+        page += "<input type='submit' value='Save'> <input type='submit' name='restart' value='Restart'>";
+        page += "</form></body></html>";
+
+        page.replace("\t", " ");
+        server.send(200, "text/html", page);
+    });
+    server.begin();
+
+    Display.clear();
+    Display.printf("Configuration AP:\n\n");
+    Display.printf(" SSID: %s\n\n", AP_SSID);
+    Display.printf(" http://%s\n", AP_IP.toString().c_str());
+
+    disableCore1WDT(); // Server library isn't friendly to our dog
+
+    while (true) {
+        server.handleClient();
+    }
+}
+
+
+static void checkActionButton()
+{
+    int start = millis();
+    do {
+        while (digitalRead(ACTION_BUTTON_PIN) == LOW) {
+            if ((millis() - start) > 2500) {
+                startAccessPoint();
+                esp_restart();
+            }
+            delay(50);
+        }
+        delay(20);
+    } while (digitalRead(ACTION_BUTTON_PIN) == LOW);
 }
 
 
@@ -197,7 +276,7 @@ static void httpRequest()
 
         sprintf(payload,
             "station=%s&app=%s+%s&ps_http=%.2f&ps_poll=%.2f&uptime=%d" "&offset=%d&cycles=%d&status=%d&%s",
-            CFG_STR("STATION.NAME"),                 // Current station name
+            CFG_STR("STATION.NAME"),      // Current station name
             PROJECT_VERSION,              // Build version information
             esp_app_desc.version,         // Build version information
             (float)STATION_POLL_INTERVAL / CFG_INT("STATION.POLL_INTERVAL"), // Current power saving mode
@@ -223,13 +302,13 @@ static void httpRequest()
         else if (httpCode > 0) {
             ESP_LOGI(__func__, "HTTP(%d): Received code: %d  Body: '%s'", count, httpCode, httpBody);
             Display.printf("OK (%d)", httpCode);
+            memset(item, 0, sizeof(http_item_t)); // Request successful, clear item from queue!
         }
         else {
             Display.printf("Failed (%s)", http.errorToString(httpCode).c_str());
         }
 
         http.end();
-        memset(item, 0, sizeof(http_item_t)); // Or do it only on success?
     }
 
     next_http_update = start_time + (HTTP_UPDATE_INTERVAL * 1000);
@@ -276,6 +355,14 @@ void setup()
     ESP_LOGI(__func__, "Station name: %s", CFG_STR("STATION.NAME"));
     Display.printf("# %s #\n", CFG_STR("STATION.NAME"));
     Display.printf("SD: %s | Up: %dm\n", "?", (start_time - boot_time) / 60000);
+
+    // Our button can always interrupt light and deep sleep
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)ACTION_BUTTON_PIN, LOW);
+    rtc_gpio_pulldown_dis((gpio_num_t)ACTION_BUTTON_PIN);
+    rtc_gpio_pullup_en((gpio_num_t)ACTION_BUTTON_PIN);
+
+    // Check if we detect a long press
+    checkActionButton();
 }
 
 
@@ -363,6 +450,7 @@ void loop()
         delay(50); // Time for the uart hardware buffer to empty
         esp_sleep_enable_timer_wakeup((display_timeout - 50) * 1000);
         esp_light_sleep_start();
+        checkActionButton(); // Mostly to debounce
     }
 
 
