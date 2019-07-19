@@ -15,6 +15,28 @@ ConfigProvider::ConfigProvider()
     root = cJSON_CreateObject();
 }
 
+bool ConfigProvider::loadJSON(const char *buffer)
+{
+    cJSON *new_root = cJSON_Parse(buffer);
+
+    if (new_root == NULL) {
+        ESP_LOGW(MODULE, "Configuration failed to load from string");
+        if (root == NULL) root = cJSON_CreateObject();
+        return false;
+    }
+
+    cJSON_free(root);
+    root = new_root;
+
+    ESP_LOGI(MODULE, "Configuration loaded from string, %d entries found", cJSON_GetArraySize(root));
+    return true;
+}
+
+char *ConfigProvider::saveJSON()
+{
+    return cJSON_Print(root);
+}
+
 bool ConfigProvider::loadFile(const char *file)
 {
     FILE *fp = fopen(file, "rb");
@@ -27,17 +49,19 @@ bool ConfigProvider::loadFile(const char *file)
     char *buffer = (char*)malloc(8 * 1024);
     fread(buffer, 1, 8 * 1024, fp);
 
-    cJSON_free(root);
-    root = cJSON_Parse(buffer);
+    cJSON *new_root = cJSON_Parse(buffer);
 
     free(buffer);
     fclose(fp);
 
-    if (root == NULL) {
+    if (new_root == NULL) {
         ESP_LOGW(MODULE, "Configuration failed to load from %s", file);
-        root = cJSON_CreateObject();
+        if (root == NULL) root = cJSON_CreateObject();
         return false;
     }
+
+    cJSON_free(root);
+    root = new_root;
 
     ESP_LOGI(MODULE, "Configuration loaded from %s, %d entries found", file, cJSON_GetArraySize(root));
     return true;
@@ -89,19 +113,23 @@ bool ConfigProvider::loadNVS(const char *ns)
     size_t length = 4000;
     char  *buffer = (char *)malloc(length);
 
+    cJSON *new_root = NULL;
     nvs_handle nvs_h = openNVS(ns);
+
     if (nvs_get_str(nvs_h, "json", buffer, &length) == ESP_OK) {
-        cJSON_free(root);
-        root = cJSON_Parse(buffer);
+        new_root = cJSON_Parse(buffer);
     }
     closeNVS(nvs_h);
     free(buffer);
 
-    if (root == NULL) {
+    if (new_root == NULL) {
         ESP_LOGW(MODULE, "Configuration failed to load from NVS");
-        root = cJSON_CreateObject();
+        if (root == NULL) root = cJSON_CreateObject();
         return false;
     }
+
+    cJSON_free(root);
+    root = new_root;
 
     ESP_LOGI(MODULE, "Configuration loaded from NVS, %d entries found", cJSON_GetArraySize(root));
     return true;

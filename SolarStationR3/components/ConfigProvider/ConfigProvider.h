@@ -15,10 +15,12 @@ private:
 public:
     ConfigProvider();
 
-    bool loadFile(const char *file);
-    bool saveFile(const char *file, bool update_only=false);
-    bool loadNVS(const char *ns);
-    bool saveNVS(const char *ns, bool update_only=false);
+    bool  loadJSON(const char *buffer);
+    char *saveJSON();
+    bool  loadFile(const char *file);
+    bool  saveFile(const char *file, bool update_only=false);
+    bool  loadNVS(const char *ns);
+    bool  saveNVS(const char *ns, bool update_only=false);
 
     char* getString(const char *key, char *default_value);
     bool  getString(const char *key, char *default_value, char *out);
