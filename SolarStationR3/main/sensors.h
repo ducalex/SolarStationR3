@@ -125,7 +125,8 @@ void pollSensors()
         ESP_LOGE(__func__, "ADS1115 sensor not responding");
     }
 
-    float ws = ulp_wind_read();
+    float circ = (2 * 3.141592 * CFG_DBL("sensors.anemometer.radius")) / 100 / 1000;
+    float ws = ulp_wind_read() * 60 * circ * CFG_DBL("sensors.anemometer.calibration");
     float wd = 0;
     setSensorValue("ws", ws);
     setSensorValue("wd", wd);

@@ -43,6 +43,8 @@
 #define DEFAULT_POWER_POLL_LOW_VBAT_TRESHOLD  3.7 // Volts  (Maybe we should use percent so it works on any battery?)
 #define DEFAULT_POWER_HTTP_LOW_VBAT_TRESHOLD  3.5 // Volts  (Maybe we should use percent so it works on any battery?)
 #define DEFAULT_POWER_VBAT_MULTIPLIER         2.0 // Factor (If there is a voltage divider)
+#define DEFAULT_SENSORS_ANEMOMETER_RADIUS      15 // centimeters
+#define DEFAULT_SENSORS_ANEMOMETER_CALIBRATION  1 // The calculated value is multiplied by this
 
 // ConfigProvider settings
 #define CONFIG_USE_FILE "/sd/config.json"

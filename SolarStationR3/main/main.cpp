@@ -135,6 +135,8 @@ static void loadConfiguration()
     CFG_LOAD_DBL("power.poll_low_vbat_treshold", DEFAULT_POWER_POLL_LOW_VBAT_TRESHOLD);
     CFG_LOAD_DBL("power.http_low_vbat_treshold", DEFAULT_POWER_HTTP_LOW_VBAT_TRESHOLD);
     CFG_LOAD_DBL("power.vbat_multiplier", DEFAULT_POWER_VBAT_MULTIPLIER);
+    CFG_LOAD_DBL("sensors.anemometer.radius", DEFAULT_SENSORS_ANEMOMETER_RADIUS);
+    CFG_LOAD_DBL("sensors.anemometer.calibration", DEFAULT_SENSORS_ANEMOMETER_CALIBRATION);
 
     saveConfiguration(true);
 }
@@ -436,7 +438,9 @@ void setup()
 
     if (wake_count == 1) {
         ulp_wind_start();
-
+        // Ideally we'd try to mount it on every boot but if the station has no SD Card
+        // then it takes about 600ms to timeout, .6*60*24 = 15m/day.
+        // Or about 12mAh per day wasted just waiting.
         if (SD.begin()) {
             ESP_LOGI(__func__, "SD Card successfully mounted.");
             if (SD.exists("firmware.bin")) {
