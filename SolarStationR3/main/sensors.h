@@ -1,7 +1,6 @@
 #include "Adafruit_ADS1015.h"
 #include "BMP180.h"
 #include "DHT.h"
-#include "../config.h"
 
 #define SENSOR(key, unit, desc, avgr) {key, unit, desc, 0, 0, avgr, 0, 0.00, 0.00, 0.00, 0.00}
 typedef struct {
@@ -9,7 +8,7 @@ typedef struct {
     char unit[4];     //
     char desc[16];    //
     short status;     // Status
-    ulong updated;    // Last update timestamp
+    unsigned int updated;    // Last update timestamp
     short nsamples;   // Used in avg calculation
     short count;      //
     float min;        // All time min
@@ -17,6 +16,10 @@ typedef struct {
     float avg;        // Average value of last nsamples
     float val;        // Current value
 } SENSOR_t;
+
+#define SENSOR_OK 0
+#define SENSOR_ERR_UNKNOWN -1
+#define SENSOR_ERR_TIMEOUT -2
 
 RTC_DATA_ATTR SENSOR_t SENSORS[] = {
     SENSOR("bat",  "V",    "Battery",     5),
@@ -35,12 +38,11 @@ RTC_DATA_ATTR SENSOR_t SENSORS[] = {
 };
 const int SENSORS_COUNT = (sizeof(SENSORS) / sizeof(SENSOR_t));
 
-#define SENSOR_OK 0
-#define SENSOR_ERR_UNKNOWN -1
-#define SENSOR_ERR_TIMEOUT -2
+extern ConfigProvider config;
+uint32_t rtc_millis();
+int ulp_wind_read();
 
-
-static SENSOR_t *getSensor(const char* key)
+SENSOR_t *getSensor(const char* key)
 {
     for(int i = 0; i < SENSORS_COUNT; i++) {
         if (strcmp(key, SENSORS[i].key) == 0) {
@@ -73,7 +75,7 @@ static void setSensorError(const char *key, short status = SENSOR_ERR_UNKNOWN)
 }
 
 
-static void pollSensors()
+void pollSensors()
 {
     float t = 0, h = 0, p = 0;
 
@@ -131,7 +133,7 @@ static void pollSensors()
 }
 
 
-static void packSensors(float *outFrame, uint32_t *outStatus)
+void packSensors(float *outFrame, uint32_t *outStatus)
 {
     *outStatus = 0;
 
@@ -144,7 +146,7 @@ static void packSensors(float *outFrame, uint32_t *outStatus)
 }
 
 
-static char* serializeSensors(float *frame)
+char* serializeSensors(float *frame)
 {
     char *outBuffer = (char*)calloc(SENSORS_COUNT * 16, 1);
     for (int i = 0; i < SENSORS_COUNT; i++) {
@@ -153,9 +155,10 @@ static char* serializeSensors(float *frame)
     return outBuffer;
 }
 
-#define P_SENS(key) getSensor(key)->val, getSensor(key)->unit
-static void displaySensors()
+
+void displaySensors()
 {
+    #define P_SENS(key) getSensor(key)->val, getSensor(key)->unit
     Display.printf("\nVolt: %.2f%s %.2f%s", P_SENS("bat"), P_SENS("sol"));
     Display.printf("\nLight: %.0f%s %.0f%s", P_SENS("l1"), P_SENS("l2"));
     Display.printf("\nTemp: %.2f%s %.2f%s", P_SENS("t1"), P_SENS("t2"));

@@ -8,13 +8,14 @@
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
-#include "config.h"
+#include "driver/rtc_io.h"
+#include "esp32/ulp.h"
+#include "sys/time.h"
 
-#include "includes/userconfig.h"
-#include "includes/time.h"
-#include "includes/ulp.h"
-#include "includes/display.h"
-#include "includes/sensors.h"
+#include "config.h"
+#include "macros.h"
+#include "display.h"
+#include "sensors.h"
 
 #define HTTP_QUEUE_MAX_ITEMS 40
 typedef struct {
@@ -33,14 +34,110 @@ RTC_DATA_ATTR static uint16_t http_queue_pos = 0;
 static int STATION_POLL_INTERVAL = DEFAULT_STATION_POLL_INTERVAL;
 static int HTTP_UPDATE_INTERVAL = DEFAULT_HTTP_UPDATE_INTERVAL;
 
+ConfigProvider config;
+
 extern const esp_app_desc_t esp_app_desc;
 
-#define POWER_SAVE_INTERVAL(in, th, vb) (((float)th <= vb || vb < 2) ? in : (uint)ceil(((th-vb) * 10.00) * in))
-#define PRINT_MEMORY_STATS() { \
-  multi_heap_info_t info; \
-  heap_caps_get_info(&info, MALLOC_CAP_DEFAULT); \
-  ESP_LOGI("Memory", "Memory: Used: %d KB   Free: %d KB", \
-        info.total_allocated_bytes / 1024, info.total_free_bytes / 1024); }
+extern const uint8_t ulp_wind_bin_start[] asm("_binary_ulp_wind_bin_start");
+extern const uint8_t ulp_wind_bin_end[]   asm("_binary_ulp_wind_bin_end");
+
+extern uint32_t ulp_edge_count_max;
+extern uint32_t ulp_entry;
+extern uint32_t ulp_io_number;
+extern uint32_t ulp_loops_in_period;
+
+const uint32_t ulp_wind_sample_length_us = 10 * 1000 * 1000;
+const uint32_t ulp_wind_period_us = 500;
+
+void ulp_wind_start()
+{
+    esp_err_t err = ulp_load_binary(0, ulp_wind_bin_start,
+            (ulp_wind_bin_end - ulp_wind_bin_start) / sizeof(uint32_t));
+
+    if (err != ESP_OK) {
+        ESP_LOGE("ULP", "Failed to load the ULP binary! (%s)", esp_err_to_name(err));
+        return;
+    }
+
+    gpio_num_t gpio_num = (gpio_num_t)ANEMOMETER_PIN;
+    assert(rtc_gpio_desc[gpio_num].reg && "GPIO used for pulse counting must be an RTC IO");
+
+    ulp_io_number = rtc_gpio_desc[gpio_num].rtc_num; /* map from GPIO# to RTC_IO# */
+    ulp_loops_in_period = ulp_wind_sample_length_us / ulp_wind_period_us;
+
+    rtc_gpio_init(gpio_num);
+    rtc_gpio_set_direction(gpio_num, RTC_GPIO_MODE_INPUT_ONLY);
+    rtc_gpio_pulldown_dis(gpio_num);
+    rtc_gpio_pullup_en(gpio_num);
+    rtc_gpio_hold_en(gpio_num);
+
+    ulp_set_wakeup_period(0, ulp_wind_period_us);
+
+    err = ulp_run(&ulp_entry - RTC_SLOW_MEM);
+
+    if (err == ESP_OK) {
+        ESP_LOGI("ULP", "ULP wind program started!");
+    } else {
+        ESP_LOGE("ULP", "Failed to start the ULP binary! (%s)", esp_err_to_name(err));
+    }
+}
+
+
+int ulp_wind_read()
+{
+    float rotations = (ulp_edge_count_max & UINT16_MAX) / 2;
+    int rpm = (int)(rotations / (ulp_wind_sample_length_us / 1000 / 1000) * 60);
+
+    // Reset the counter
+    ulp_edge_count_max = 0;
+
+    return rpm;
+}
+
+
+// True RTC millis count since the ESP32 was last reset
+uint32_t rtc_millis()
+{
+    struct timeval curTime;
+    gettimeofday(&curTime, NULL);
+    return (((uint64_t)curTime.tv_sec * 1000000) + curTime.tv_usec) / 1000;
+}
+
+
+static void saveConfiguration(bool update_only)
+{
+    if (SD.cardType() != CARD_NONE) {
+        config.saveFile(CONFIG_USE_FILE, update_only);
+    }
+    config.saveNVS(CONFIG_USE_NVS, update_only);
+}
+
+
+static void loadConfiguration()
+{
+    if (SD.cardType() == CARD_NONE || !config.loadFile(CONFIG_USE_FILE)) {
+        config.loadNVS(CONFIG_USE_NVS);
+    }
+
+    CFG_LOAD_STR("station.name", DEFAULT_STATION_NAME);
+    CFG_LOAD_INT("station.poll_interval", DEFAULT_STATION_POLL_INTERVAL);
+    CFG_LOAD_INT("station.display_timeout", DEFAULT_STATION_DISPLAY_TIMEOUT);
+    CFG_LOAD_STR("wifi.ssid", DEFAULT_WIFI_SSID);
+    CFG_LOAD_STR("wifi.password", DEFAULT_WIFI_PASSWORD);
+    CFG_LOAD_INT("wifi.timeout", DEFAULT_WIFI_TIMEOUT);
+    CFG_LOAD_STR("http.update.url", DEFAULT_HTTP_UPDATE_URL);
+    CFG_LOAD_STR("http.update.username", DEFAULT_HTTP_UPDATE_USERNAME);
+    CFG_LOAD_STR("http.update.password", DEFAULT_HTTP_UPDATE_PASSWORD);
+    CFG_LOAD_INT("http.update.interval", DEFAULT_HTTP_UPDATE_INTERVAL);
+    CFG_LOAD_INT("http.ota.enabled", 1);
+    CFG_LOAD_INT("http.timeout", DEFAULT_HTTP_TIMEOUT);
+    CFG_LOAD_DBL("power.power_save_strategy", DEFAULT_POWER_POWER_SAVE_STRATEGY);
+    CFG_LOAD_DBL("power.poll_low_vbat_treshold", DEFAULT_POWER_POLL_LOW_VBAT_TRESHOLD);
+    CFG_LOAD_DBL("power.http_low_vbat_treshold", DEFAULT_POWER_HTTP_LOW_VBAT_TRESHOLD);
+    CFG_LOAD_DBL("power.vbat_multiplier", DEFAULT_POWER_VBAT_MULTIPLIER);
+
+    saveConfiguration(true);
+}
 
 
 static void hibernate()

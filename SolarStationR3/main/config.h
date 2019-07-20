@@ -43,3 +43,7 @@
 #define DEFAULT_POWER_POLL_LOW_VBAT_TRESHOLD  3.7 // Volts  (Maybe we should use percent so it works on any battery?)
 #define DEFAULT_POWER_HTTP_LOW_VBAT_TRESHOLD  3.5 // Volts  (Maybe we should use percent so it works on any battery?)
 #define DEFAULT_POWER_VBAT_MULTIPLIER         2.0 // Factor (If there is a voltage divider)
+
+// ConfigProvider settings
+#define CONFIG_USE_FILE "/sd/config.json"
+#define CONFIG_USE_NVS "configuration"

@@ -1,5 +1,4 @@
 #include "SSD1306AsciiWire.h"
-#include "../config.h"
 
 static class {
     SSD1306AsciiWire m_display;
