@@ -31,6 +31,7 @@ RTC_DATA_ATTR static uint32_t start_time = 0;
 RTC_DATA_ATTR static uint32_t next_http_update = 0;
 RTC_DATA_ATTR static http_item_t http_queue[HTTP_QUEUE_MAX_ITEMS];
 RTC_DATA_ATTR static uint16_t http_queue_pos = 0;
+RTC_DATA_ATTR static bool use_sdcard = true;
 static int STATION_POLL_INTERVAL = DEFAULT_STATION_POLL_INTERVAL;
 static int HTTP_UPDATE_INTERVAL = DEFAULT_HTTP_UPDATE_INTERVAL;
 
@@ -187,7 +188,6 @@ static void startAccessPoint()
         return;
     }
 
-    SD.begin();
     WebServer server(80);
     server.on("/", [&server]() {
         if (server.hasArg("restart")) {
@@ -421,8 +421,9 @@ void setup()
     ESP_LOGI(__func__, "Uptime: %d seconds (Cycles: %d)", (rtc_millis() - boot_time) / 1000, wake_count);
     PRINT_MEMORY_STATS();
 
-    if (boot_time == 0) {
+    if (wake_count == 0) {
         boot_time = rtc_millis();
+        ulp_wind_start();
     }
 
     start_time = rtc_millis();
@@ -436,12 +437,8 @@ void setup()
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     Display.begin();
 
-    if (wake_count == 1) {
-        ulp_wind_start();
-        // Ideally we'd try to mount it on every boot but if the station has no SD Card
-        // then it takes about 600ms to timeout, .6*60*24 = 15m/day.
-        // Or about 12mAh per day wasted just waiting.
-        if (SD.begin()) {
+    if (use_sdcard) {
+        if ((use_sdcard = SD.begin())) {
             ESP_LOGI(__func__, "SD Card successfully mounted.");
             if (SD.exists("firmware.bin")) {
                 firmware_upgrade_from_file("firmware.bin");
@@ -455,7 +452,7 @@ void setup()
 
     ESP_LOGI(__func__, "Station name: %s", CFG_STR("STATION.NAME"));
     Display.printf("# %s #\n", CFG_STR("STATION.NAME"));
-    Display.printf("SD: %s | Up: %dm\n", "?", (start_time - boot_time) / 60000);
+    Display.printf("SD: %d | Up: %dm\n", use_sdcard ? 1 : 0, (start_time - boot_time) / 60000);
 
     // Our button can always interrupt light and deep sleep
     esp_sleep_enable_ext0_wakeup((gpio_num_t)ACTION_BUTTON_PIN, LOW);
