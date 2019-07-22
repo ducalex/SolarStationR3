@@ -267,80 +267,77 @@ static void firmware_upgrade_from_file(const char *filePath)
 
 static void startConfigurationServer(bool force_ap = false)
 {
-    char *AP_SSID = CFG_STR("STATION.NAME");
-    IPAddress LOCAL_IP = IPAddress(1, 1, 1, 1);
+    uint32_t server_timeout = millis() + 15 * 60000;
+    IPAddress server_ip = IPAddress(1, 1, 1, 1);
+    char *ssid = CFG_STR("STATION.NAME");
 
     WiFi.softAPdisconnect(true);
     WiFi.disconnect(true);
 
-    char *wifi_ssid = CFG_STR("WIFI.SSID"), *wifi_password = CFG_STR("WIFI.PASSWORD");
-    if (!force_ap && strlen(wifi_ssid) > 0) {
+    char *cfg_ssid = CFG_STR("WIFI.SSID"), *cfg_password = CFG_STR("WIFI.PASSWORD");
+    if (!force_ap && strlen(cfg_ssid) > 0) {
         ESP_LOGI("AP", "Starting Configuration server on local wifi");
         Display.printf("Connecting...");
 
-        WiFi.begin(wifi_ssid, wifi_password);
+        WiFi.begin(cfg_ssid, cfg_password);
         WiFi.setSleep(true);
         WiFi.waitStatusBits(STA_HAS_IP_BIT, 20000);
 
         if (WiFi.status() == WL_CONNECTED) {
-            AP_SSID = wifi_ssid;
-            LOCAL_IP = WiFi.localIP();
-            ESP_LOGI("AP", "Wifi connected. SSID: %s  IP: %s", AP_SSID, LOCAL_IP.toString().c_str());
+            ssid = cfg_ssid;
+            server_ip = WiFi.localIP();
+            ESP_LOGI("AP", "Wifi connected. SSID: %s  IP: %s", cfg_ssid, server_ip.toString().c_str());
         } else {
-            ESP_LOGW("AP", "Unable to connect to '%s'", wifi_ssid);
+            ESP_LOGW("AP", "Unable to connect to '%s'", cfg_ssid);
         }
     }
 
     if (WiFi.status() != WL_CONNECTED) {
         ESP_LOGI("AP", "Starting Configuration server on access point");
 
-        if (WiFi.softAPConfig(LOCAL_IP, LOCAL_IP, IPAddress(255, 0, 0, 0)) && WiFi.softAP(AP_SSID)) {
-            ESP_LOGI("AP", "Access point started. SSID: %s  IP: %s", AP_SSID, LOCAL_IP.toString().c_str());
+        if (WiFi.softAPConfig(server_ip, server_ip, IPAddress(255, 0, 0, 0)) && WiFi.softAP(ssid)) {
+            ESP_LOGI("AP", "Access point started. SSID: %s  IP: %s", ssid, server_ip.toString().c_str());
         } else {
             ESP_LOGE("AP", "Unable to start the access point");
             return;
         }
     }
 
-    ESP_LOGI("AP", "Server listening at http://%s", LOCAL_IP.toString().c_str());
-
     WebServer server(80);
-    server.on("/", [&server]() {
-        String page = "<html><head>";
-        page += "<meta name=viewport content='width=device-width, initial-scale=0'>";
-        page += "<style>label,input,button{font-size:2em;}textarea{width:100%; height:75%;}</style>";
-        page += "</head><body>";
+    ESP_LOGI("AP", "Server listening at http://%s:80", server_ip.toString().c_str());
+
+    auto server_respond = [&](int code, String body) {
+        server.send(code, "text/html",
+                "<html><head><meta name=viewport content='width=device-width,initial-scale=0'>"
+                "<style>label,input,a{font-size:2em;margin:0 5px}textarea{width:100%; height:75%}body"
+                "{font-family:sans-serif;}</style></head><body><h1>" + String(CFG_STR("STATION.NAME"))
+                + "</h1>" + body + "</body></html>");
+    };
+    server.on("/", [&]() {
+        String body;
         if (server.method() == HTTP_POST) {
             if (config.loadJSON(server.arg("config").c_str())) {
                 saveConfiguration(true);
-                page += "<h2>Configuration saved!</h2>";
+                body += "<h2>Configuration saved!</h2>";
             } else {
-                page += "<h2>Invalid JSON!</h2>";
+                body += "<h2>Invalid JSON!</h2>";
             }
-        } else {
-            page += "<h2>" + String(CFG_STR("STATION.NAME")) + "</h2>";
         }
-        page += "<form method='post'>";
-        page += "<div><textarea name='config'>" + String(config.saveJSON()) + "</textarea></div>";
-        page += "<input type='submit' value='Save'> <a href='/restart'><button>Restart</button></a>";
-        page += "</form><hr>";
-        page += "<form action='/upload' method='post' enctype='multipart/form-data'>";
-        page += "<label>Update firmware: </label><input type='file' name='file'>";
-        page += "<input type='submit' value='Update'></form></body></html>";
+        body += "<form method='post'><textarea name='config'>" + String(config.saveJSON()) + "</textarea>";
+        body += "</textarea><p><input type='submit' value='Save'> <a href='/restart'>Restart</a></p></form><hr>";
+        body += "<form action='/upload' method='post' enctype='multipart/form-data'><label>Update firmware:</label>";
+        body += "<input type='file' name='file' style='max-width:50%'><input type='submit' value='Update'></form>";
+        body.replace("\t", " ");
 
-        page.replace("\t", " ");
-        server.send(200, "text/html", page);
+        server_respond(200, body);
     });
-    server.on("/restart", [&server] {
-        server.send(200, "text/plain", "Goodbye!");
+    server.on("/restart", [&] {
+        server_respond(200, "Goodbye!");
         delay(1000);
-        WiFi.softAPdisconnect(true);
-        WiFi.disconnect(true);
         esp_restart();
     });
-    server.on("/upload", HTTP_POST, [&server] {
-        server.send(200, "text/html",
-            "Status: " + String(Update.getErrorStr()) + " <a href='/restart'><button>Restart</button></a>");
+    server.on("/upload", HTTP_POST, [&] {
+        server_respond(200, String("Status: <p>") + Update.getErrorStr() + "</p><a href='/restart'>Restart</a>");
     }, [&server]() {
         HTTPUpload& upload = server.upload();
         if (upload.status == UPLOAD_FILE_START) {
@@ -349,25 +346,24 @@ static void startConfigurationServer(bool force_ap = false)
         else if (upload.status == UPLOAD_FILE_WRITE) {
             size_t written = firmware_upgrade_write(upload.buf, upload.currentSize);
             if (written != upload.currentSize) {
-                ESP_LOGE("Upload", "Firmware update: Written %d of %d bytes", written, upload.currentSize);
+                ESP_LOGE("Upload", "Firmware update: Written %d/%d bytes", written, upload.currentSize);
             }
         }
         else if (upload.status == UPLOAD_FILE_END) {
             firmware_upgrade_end();
         }
     });
-
     server.begin();
 
     Display.clear();
     Display.printf("Configuration Server:\n\n");
-    Display.printf(" SSID: %s\n\n", AP_SSID);
-    Display.printf(" http://%s\n", LOCAL_IP.toString().c_str());
+    Display.printf(" SSID: %s\n\n", ssid);
+    Display.printf(" http://%s\n", server_ip.toString().c_str());
 
     // Just in case the user is still holding the button
     debounceButton(ACTION_BUTTON_PIN, LOW, 10000);
 
-    while (true) {
+    while (millis() < server_timeout || server.client().connected()) {
         server.handleClient();
         if (debounceButton(ACTION_BUTTON_PIN, LOW, 500)) {
             server.stop();
