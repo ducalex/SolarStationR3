@@ -105,6 +105,20 @@ uint32_t rtc_millis()
 }
 
 
+static bool debounceButton(int gpio, int level, int threshold = 50)
+{
+    int timeout = millis() + threshold;
+    do {
+        while (digitalRead(gpio) == level && millis() < timeout) {
+            delay(10);
+        }
+        delay(10);
+    } while (digitalRead(gpio) == level && millis() < timeout);
+
+    return millis() >= timeout;
+}
+
+
 static void saveConfiguration(bool update_only)
 {
     if (SD.cardType() != CARD_NONE) {
@@ -174,19 +188,44 @@ static void hibernate()
 }
 
 
-static void startAccessPoint()
+static void startConfigurationServer(bool force_ap = false)
 {
-    const char *AP_SSID = CFG_STR("STATION.NAME");
-    const IPAddress AP_IP = IPAddress(1, 1, 1, 1);
+    char *AP_SSID = CFG_STR("STATION.NAME");
+    IPAddress LOCAL_IP = IPAddress(1, 1, 1, 1);
 
-    ESP_LOGI("AP", "Starting Configuration access point");
+    WiFi.softAPdisconnect(true);
+    WiFi.disconnect(true);
 
-    if (WiFi.softAPConfig(AP_IP, AP_IP, IPAddress(255, 0, 0, 0)) && WiFi.softAP(AP_SSID)) {
-        ESP_LOGI("AP", "SSID: %s   IP: %s", AP_SSID, AP_IP.toString().c_str());
-    } else {
-        ESP_LOGE("AP", "Unable to start the access point");
-        return;
+    char *wifi_ssid = CFG_STR("WIFI.SSID"), *wifi_password = CFG_STR("WIFI.PASSWORD");
+    if (!force_ap && strlen(wifi_ssid) > 0) {
+        ESP_LOGI("AP", "Starting Configuration server on local wifi");
+        Display.printf("Connecting...");
+
+        WiFi.begin(wifi_ssid, wifi_password);
+        WiFi.setSleep(true);
+        WiFi.waitStatusBits(STA_HAS_IP_BIT, 20000);
+
+        if (WiFi.status() == WL_CONNECTED) {
+            AP_SSID = wifi_ssid;
+            LOCAL_IP = WiFi.localIP();
+            ESP_LOGI("AP", "Wifi connected. SSID: %s  IP: %s", AP_SSID, LOCAL_IP.toString().c_str());
+        } else {
+            ESP_LOGW("AP", "Unable to connect to '%s'", wifi_ssid);
+        }
     }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        ESP_LOGI("AP", "Starting Configuration server on access point");
+
+        if (WiFi.softAPConfig(LOCAL_IP, LOCAL_IP, IPAddress(255, 0, 0, 0)) && WiFi.softAP(AP_SSID)) {
+            ESP_LOGI("AP", "Access point started. SSID: %s  IP: %s", AP_SSID, LOCAL_IP.toString().c_str());
+        } else {
+            ESP_LOGE("AP", "Unable to start the access point");
+            return;
+        }
+    }
+
+    ESP_LOGI("AP", "Server listening at http://%s", LOCAL_IP.toString().c_str());
 
     WebServer server(80);
     server.on("/", [&server]() {
@@ -194,6 +233,7 @@ static void startAccessPoint()
             server.send(200, "text/plain", "Goodbye!");
             delay(1000);
             WiFi.softAPdisconnect(true);
+            WiFi.disconnect(true);
             esp_restart();
         }
 
@@ -224,31 +264,29 @@ static void startAccessPoint()
     server.begin();
 
     Display.clear();
-    Display.printf("Configuration AP:\n\n");
+    Display.printf("Configuration Server:\n\n");
     Display.printf(" SSID: %s\n\n", AP_SSID);
-    Display.printf(" http://%s\n", AP_IP.toString().c_str());
+    Display.printf(" http://%s\n", LOCAL_IP.toString().c_str());
 
-    disableCore1WDT(); // Server library isn't friendly to our dog
+    // Just in case the user is still holding the button
+    debounceButton(ACTION_BUTTON_PIN, LOW, 10000);
 
     while (true) {
         server.handleClient();
+        vTaskDelay(1);
+        if (debounceButton(ACTION_BUTTON_PIN, LOW, 150)) {
+            startConfigurationServer(!force_ap);
+        }
     }
 }
 
 
 static void checkActionButton()
 {
-    int start = millis();
-    do {
-        while (digitalRead(ACTION_BUTTON_PIN) == LOW) {
-            if ((millis() - start) > 2500) {
-                startAccessPoint();
-                esp_restart();
-            }
-            delay(50);
-        }
-        delay(20);
-    } while (digitalRead(ACTION_BUTTON_PIN) == LOW);
+    if (debounceButton(ACTION_BUTTON_PIN, LOW, 2500)) {
+        startConfigurationServer();
+        esp_restart();
+    }
 }
 
 
