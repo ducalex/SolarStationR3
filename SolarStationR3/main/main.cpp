@@ -2,6 +2,7 @@
 #include "WiFi.h"
 #include "HTTPClient.h"
 #include "WebServer.h"
+#include "Update.h"
 #include "ConfigProvider.h"
 #include "SD.h"
 #include "esp_log.h"
@@ -188,6 +189,82 @@ static void hibernate()
 }
 
 
+static bool firmware_upgrade_begin()
+{
+    Display.clear();
+    Display.printf("Upgrading firmware...\n");
+
+    if (!Update.begin(OTA_SIZE_UNKNOWN, U_FLASH)) {
+        const esp_partition_t *factory = esp_partition_find_first(ESP_PARTITION_TYPE_APP,
+            ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
+        if (Update.getError() == UPDATE_ERROR_NO_PARTITION && factory != NULL) {
+            ESP_LOGW(__func__, "No free OTA partition. Rebooting to factory image to flash from there.");
+            esp_ota_set_boot_partition(factory);
+            esp_restart();
+        }
+        ESP_LOGE(__func__, "Unable to start OTA process");
+        return false;
+    }
+
+    Update.onProgress([] (size_t a, size_t t) {
+        static int count = 0;
+        Display.printf(count++ % 22 ? "." : "\n");
+    });
+
+    return true;
+}
+
+#define firmware_upgrade_writeStream(s) Update.writeStream(s)
+#define firmware_upgrade_write(a, b) Update.write(a, b)
+
+static bool firmware_upgrade_end()
+{
+    if (Update.end(true)) {
+        ESP_LOGI(__func__, "Firmware successfully flashed! Status: %s", Update.getErrorStr());
+        Display.printf("\n\nComplete!");
+        return true;
+    } else {
+        ESP_LOGE(__func__, "Firmware upgrade failed! Status: %s", Update.getErrorStr());
+        Display.printf("\n\nFailed!");
+        return false;
+    }
+}
+
+
+static void firmware_upgrade_from_http(const char *url)
+{
+    ESP_LOGI(__func__, "Flashing firmware from '%s'...", url);
+
+    HTTPClient http;
+
+    vTaskDelete(NULL);
+}
+
+
+static void firmware_upgrade_from_file(const char *filePath)
+{
+    ESP_LOGI(__func__, "Flashing firmware from '%s'...", filePath);
+
+    fs::File file = SD.open(filePath);
+    if (!file) {
+        ESP_LOGE(__func__, "Unable to open file!");
+        return;
+    }
+
+    firmware_upgrade_begin();
+    firmware_upgrade_writeStream(file);
+    if (firmware_upgrade_end()) {
+        String new_name = String(filePath) + "-installed.bin";
+        file.close();
+        SD.remove(new_name);
+        SD.rename(filePath, new_name);
+        delay(10 * 1000);
+        esp_restart();
+    }
+    vTaskDelete(NULL);
+}
+
+
 static void startConfigurationServer(bool force_ap = false)
 {
     char *AP_SSID = CFG_STR("STATION.NAME");
@@ -229,17 +306,9 @@ static void startConfigurationServer(bool force_ap = false)
 
     WebServer server(80);
     server.on("/", [&server]() {
-        if (server.hasArg("restart")) {
-            server.send(200, "text/plain", "Goodbye!");
-            delay(1000);
-            WiFi.softAPdisconnect(true);
-            WiFi.disconnect(true);
-            esp_restart();
-        }
-
         String page = "<html><head>";
         page += "<meta name=viewport content='width=device-width, initial-scale=0'>";
-        page += "<style>input{font-size:2em;}textarea{width:100%; height:80%;}</style>";
+        page += "<style>label,input,button{font-size:2em;}textarea{width:100%; height:75%;}</style>";
         page += "</head><body>";
         if (server.method() == HTTP_POST) {
             if (config.loadJSON(server.arg("config").c_str())) {
@@ -249,18 +318,45 @@ static void startConfigurationServer(bool force_ap = false)
                 page += "<h2>Invalid JSON!</h2>";
             }
         } else {
-            page += "<h2>Hello!</h2>";
+            page += "<h2>" + String(CFG_STR("STATION.NAME")) + "</h2>";
         }
-        page += "<form method='post'><div>";
-        page += "<textarea name='config'>";
-        page += config.saveJSON();
-        page += "</textarea></div>";
-        page += "<input type='submit' value='Save'> <input type='submit' name='restart' value='Restart'>";
-        page += "</form></body></html>";
+        page += "<form method='post'>";
+        page += "<div><textarea name='config'>" + String(config.saveJSON()) + "</textarea></div>";
+        page += "<input type='submit' value='Save'> <a href='/restart'><button>Restart</button></a>";
+        page += "</form><hr>";
+        page += "<form action='/upload' method='post' enctype='multipart/form-data'>";
+        page += "<label>Update firmware: </label><input type='file' name='file'>";
+        page += "<input type='submit' value='Update'></form></body></html>";
 
         page.replace("\t", " ");
         server.send(200, "text/html", page);
     });
+    server.on("/restart", [&server] {
+        server.send(200, "text/plain", "Goodbye!");
+        delay(1000);
+        WiFi.softAPdisconnect(true);
+        WiFi.disconnect(true);
+        esp_restart();
+    });
+    server.on("/upload", HTTP_POST, [&server] {
+        server.send(200, "text/html",
+            "Status: " + String(Update.getErrorStr()) + " <a href='/restart'><button>Restart</button></a>");
+    }, [&server]() {
+        HTTPUpload& upload = server.upload();
+        if (upload.status == UPLOAD_FILE_START) {
+            firmware_upgrade_begin();
+        }
+        else if (upload.status == UPLOAD_FILE_WRITE) {
+            size_t written = firmware_upgrade_write(upload.buf, upload.currentSize);
+            if (written != upload.currentSize) {
+                ESP_LOGE("Upload", "Firmware update: Written %d of %d bytes", written, upload.currentSize);
+            }
+        }
+        else if (upload.status == UPLOAD_FILE_END) {
+            firmware_upgrade_end();
+        }
+    });
+
     server.begin();
 
     Display.clear();
@@ -273,8 +369,8 @@ static void startConfigurationServer(bool force_ap = false)
 
     while (true) {
         server.handleClient();
-        vTaskDelay(1);
-        if (debounceButton(ACTION_BUTTON_PIN, LOW, 150)) {
+        if (debounceButton(ACTION_BUTTON_PIN, LOW, 500)) {
+            server.stop();
             startConfigurationServer(!force_ap);
         }
     }
@@ -287,97 +383,6 @@ static void checkActionButton()
         startConfigurationServer();
         esp_restart();
     }
-}
-
-
-static bool firmware_upgrade_from_stream(Stream &stream)
-{
-    const esp_partition_t *target = esp_ota_get_next_update_partition(NULL);
-    const esp_partition_t *current = esp_ota_get_running_partition();
-    const esp_partition_t *factory = esp_partition_find_first(ESP_PARTITION_TYPE_APP,
-        ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
-
-    if (target == NULL) {
-        if (factory != NULL && current != factory) {
-            ESP_LOGW(__func__, "No free OTA partition. Rebooting to factory image to flash from there.");
-            esp_ota_set_boot_partition(factory);
-            esp_restart();
-        }
-        ESP_LOGE(__func__, "No free OTA partition. Cannot upgrade");
-        return false;
-    }
-
-    ESP_LOGI(__func__, "Flashing firmware to 0x%x...", target->address);
-
-    Display.clear();
-    Display.printf("Upgrading firmware...\n");
-
-    uint8_t *buffer = (uint8_t*)malloc(16 * 1024);
-    esp_ota_handle_t ota;
-    esp_err_t err;
-    size_t size, count = 0;
-
-    err = esp_ota_begin(target, OTA_SIZE_UNKNOWN, &ota);
-    if (err != ESP_OK) goto finish;
-
-    while ((size = stream.readBytes(buffer, 16 * 1024)) > 0) {
-        err = esp_ota_write(ota, buffer, size);
-        if (err != ESP_OK) goto finish;
-        Display.printf(count++ % 22 ? "." : "\n");
-    }
-
-    err = esp_ota_end(ota);
-    if (err != ESP_OK) goto finish;
-
-    err = esp_ota_set_boot_partition(target);
-    if (err != ESP_OK) goto finish;
-
-  finish:
-    free(buffer);
-    if (err == ESP_OK) {
-        Display.printf("\n\nComplete!");
-        ESP_LOGI(__func__, "Firmware successfully flashed!");
-    } else {
-        ESP_LOGE(__func__, "Firmware upgrade failed: %s", esp_err_to_name(err));
-        Display.printf("\n\nFailed!\n\n%s", esp_err_to_name(err));
-    }
-    return (err == ESP_OK);
-}
-
-
-static void firmware_upgrade_from_http(const char *url)
-{
-    ESP_LOGI(__func__, "Flashing firmware from '%s'...", url);
-
-    HTTPClient http;
-
-    if (firmware_upgrade_from_stream(http.getStream())) {
-        delay(10 * 1000);
-        esp_restart();
-    }
-    vTaskDelete(NULL);
-}
-
-
-static void firmware_upgrade_from_file(const char *filePath)
-{
-    ESP_LOGI(__func__, "Flashing firmware from '%s'...", filePath);
-
-    fs::File file = SD.open(filePath);
-    if (!file) {
-        ESP_LOGE(__func__, "Unable to open file!");
-        return;
-    }
-
-    if (firmware_upgrade_from_stream(file)) {
-        file.close();
-        String new_name = String(filePath) + "-installed.bin";
-        SD.remove(new_name);
-        SD.rename(filePath, new_name);
-        delay(10 * 1000);
-        esp_restart();
-    }
-    vTaskDelete(NULL);
 }
 
 
@@ -457,7 +462,8 @@ void setup()
     printf("\n################### WEATHER STATION (Version: %s) ###################\n\n", PROJECT_VERSION);
     ESP_LOGI(__func__, "Build: %s (%s %s)", esp_app_desc.version, esp_app_desc.date, esp_app_desc.time);
     ESP_LOGI(__func__, "Uptime: %d seconds (Cycles: %d)", (rtc_millis() - boot_time) / 1000, wake_count);
-    PRINT_MEMORY_STATS();
+    PRINT_MEMORY_STATS(); const esp_partition_t *partition = esp_ota_get_running_partition();
+    ESP_LOGI(__func__, "Partition: '%s', offset: 0x%x", partition->label, partition->address);
 
     if (wake_count == 0) {
         boot_time = rtc_millis();
