@@ -4,6 +4,37 @@
 #include "esp_ota_ops.h"
 #include "esp_image_format.h"
 
+static const char * _err2str(uint8_t _error){
+    if(_error == UPDATE_ERROR_OK){
+        return ("No Error");
+    } else if(_error == UPDATE_ERROR_WRITE){
+        return ("Flash Write Failed");
+    } else if(_error == UPDATE_ERROR_ERASE){
+        return ("Flash Erase Failed");
+    } else if(_error == UPDATE_ERROR_READ){
+        return ("Flash Read Failed");
+    } else if(_error == UPDATE_ERROR_SPACE){
+        return ("Not Enough Space");
+    } else if(_error == UPDATE_ERROR_SIZE){
+        return ("Bad Size Given");
+    } else if(_error == UPDATE_ERROR_STREAM){
+        return ("Stream Read Timeout");
+    } else if(_error == UPDATE_ERROR_MD5){
+        return ("MD5 Check Failed");
+    } else if(_error == UPDATE_ERROR_MAGIC_BYTE){
+        return ("Wrong Magic Byte");
+    } else if(_error == UPDATE_ERROR_ACTIVATE){
+        return ("Could Not Activate The Firmware");
+    } else if(_error == UPDATE_ERROR_NO_PARTITION){
+        return ("Partition Could Not be Found");
+    } else if(_error == UPDATE_ERROR_BAD_ARGUMENT){
+        return ("Bad Argument");
+    } else if(_error == UPDATE_ERROR_ABORT){
+        return ("Aborted");
+    }
+    return ("UNKNOWN");
+}
+
 static bool _partitionIsBootable(const esp_partition_t* partition){
     uint8_t buf[4];
     if(!partition){
@@ -102,7 +133,7 @@ bool UpdateClass::begin(size_t size, int command, int ledPin, uint8_t ledOn) {
             _error = UPDATE_ERROR_NO_PARTITION;
             return false;
         }
-        log_i("OTA Partition: '%s' at 0x%x", _partition->label, _partition->address);
+        log_d("OTA Partition: %s", _partition->label);
     }
     else if (command == U_SPIFFS) {
         _partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, NULL);
@@ -158,9 +189,6 @@ bool UpdateClass::_writeBuffer(){
         //this ensures that partially written firmware will not be bootable
         _buffer[0] = 0xFF;
     }
-    if (!_progress && _progress_callback) {
-        _progress_callback(0, _size);
-    }
     if(!ESP.flashEraseSector((_partition->address + _progress)/SPI_FLASH_SEC_SIZE)){
         _abort(UPDATE_ERROR_ERASE);
         return false;
@@ -176,9 +204,6 @@ bool UpdateClass::_writeBuffer(){
     _md5.add(_buffer, _bufferLen);
     _progress += _bufferLen;
     _bufferLen = 0;
-    if (_progress_callback) {
-        _progress_callback(_progress, _size);
-    }
     return true;
 }
 
@@ -294,6 +319,9 @@ size_t UpdateClass::writeStream(Stream &data) {
         _reset();
         return 0;
     }
+    if (_progress_callback) {
+        _progress_callback(0, _size);
+    }
 
     if(_ledPin != -1) {
         pinMode(_ledPin, OUTPUT);
@@ -324,11 +352,18 @@ size_t UpdateClass::writeStream(Stream &data) {
         if((_bufferLen == remaining() || _bufferLen == SPI_FLASH_SEC_SIZE) && !_writeBuffer())
             return written;
         written += toRead;
+        if(_progress_callback) {
+            _progress_callback(_progress, _size);
+        }
+    }
+    if(_progress_callback) {
+        _progress_callback(_size, _size);
     }
     return written;
 }
 
 void UpdateClass::printError(Stream &out){
-    out.println(getErrorStr());
+    out.println(_err2str(_error));
 }
+
 UpdateClass Update;

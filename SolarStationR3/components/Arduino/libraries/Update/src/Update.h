@@ -62,7 +62,7 @@ class UpdateClass {
       If all bytes are written
       this call will write the config to eboot
       and return true
-      If there is already an update running but is not finished and !evenIfRemainanig
+      If there is already an update running but is not finished and !evenIfRemaining
       or there is an error
       this will clear everything and return false
       the last error is available through getError()
@@ -97,36 +97,6 @@ class UpdateClass {
 
     //Helpers
     uint8_t getError(){ return _error; }
-    const char * getErrorStr() {
-      if(_error == UPDATE_ERROR_OK){
-          return ("No Error");
-      } else if(_error == UPDATE_ERROR_WRITE){
-          return ("Flash Write Failed");
-      } else if(_error == UPDATE_ERROR_ERASE){
-          return ("Flash Erase Failed");
-      } else if(_error == UPDATE_ERROR_READ){
-          return ("Flash Read Failed");
-      } else if(_error == UPDATE_ERROR_SPACE){
-          return ("Not Enough Space");
-      } else if(_error == UPDATE_ERROR_SIZE){
-          return ("Bad Size Given");
-      } else if(_error == UPDATE_ERROR_STREAM){
-          return ("Stream Read Timeout");
-      } else if(_error == UPDATE_ERROR_MD5){
-          return ("MD5 Check Failed");
-      } else if(_error == UPDATE_ERROR_MAGIC_BYTE){
-          return ("Wrong Magic Byte");
-      } else if(_error == UPDATE_ERROR_ACTIVATE){
-          return ("Could Not Activate The Firmware");
-      } else if(_error == UPDATE_ERROR_NO_PARTITION){
-          return ("Partition Could Not be Found");
-      } else if(_error == UPDATE_ERROR_BAD_ARGUMENT){
-          return ("Bad Argument");
-      } else if(_error == UPDATE_ERROR_ABORT){
-          return ("Aborted");
-      }
-      return ("UNKNOWN");
-    };
     void clearError(){ _error = UPDATE_ERROR_OK; }
     bool hasError(){ return _error != UPDATE_ERROR_OK; }
     bool isRunning(){ return _size > 0; }

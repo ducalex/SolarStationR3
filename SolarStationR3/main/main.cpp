@@ -2,7 +2,7 @@
 #include "WiFi.h"
 #include "HTTPClient.h"
 #include "WebServer.h"
-#include "Update.h"
+#include "FwUpdater.h"
 #include "ConfigProvider.h"
 #include "SD.h"
 #include "esp_log.h"
@@ -160,13 +160,8 @@ static void loadConfiguration()
 
 static void hibernate()
 {
-    // If we reach this point it means the app works, let's disable rollback
-    if (esp_ota_check_rollback_is_possible()) {
-        if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
-            ESP_LOGI(__func__, "Rollback: App has now been marked as OK!");
-            esp_ota_erase_last_boot_app_partition();
-        }
-    }
+    // If we reach this point it means the updated app works.
+    FwUpdater.markAppValid();
 
     // Cleanup
     Display.end();
@@ -194,19 +189,14 @@ static bool firmware_upgrade_begin()
     Display.clear();
     Display.printf("Upgrading firmware...\n");
 
-    if (!Update.begin(OTA_SIZE_UNKNOWN, U_FLASH)) {
-        const esp_partition_t *factory = esp_partition_find_first(ESP_PARTITION_TYPE_APP,
-            ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
-        if (Update.getError() == UPDATE_ERROR_NO_PARTITION && factory != NULL) {
-            ESP_LOGW(__func__, "No free OTA partition. Rebooting to factory image to flash from there.");
-            esp_ota_set_boot_partition(factory);
-            esp_restart();
+    if (!FwUpdater.begin()) {
+        if (FwUpdater.getError() == FWU_ERR_OTA_PARTITION_IN_USE) {
+            FwUpdater.rebootToFactory();
         }
-        ESP_LOGE(__func__, "Unable to start OTA process");
         return false;
     }
 
-    Update.onProgress([] (size_t a, size_t t) {
+    FwUpdater.onProgress([] (size_t a, size_t t) {
         static int count = 0;
         Display.printf(count++ % 22 ? "." : "\n");
     });
@@ -214,18 +204,14 @@ static bool firmware_upgrade_begin()
     return true;
 }
 
-#define firmware_upgrade_writeStream(s) Update.writeStream(s)
-#define firmware_upgrade_write(a, b) Update.write(a, b)
 
 static bool firmware_upgrade_end()
 {
-    if (Update.end(true)) {
-        ESP_LOGI(__func__, "Firmware successfully flashed! Status: %s", Update.getErrorStr());
+    if (FwUpdater.end()) {
         Display.printf("\n\nComplete!");
         return true;
     } else {
-        ESP_LOGE(__func__, "Firmware upgrade failed! Status: %s", Update.getErrorStr());
-        Display.printf("\n\nFailed!");
+        Display.printf("\n\nFailed!\n\n%s", FwUpdater.getErrorStr());
         return false;
     }
 }
@@ -235,9 +221,10 @@ static void firmware_upgrade_from_http(const char *url)
 {
     ESP_LOGI(__func__, "Flashing firmware from '%s'...", url);
 
-    HTTPClient http;
-
-    vTaskDelete(NULL);
+    if (firmware_upgrade_begin() && FwUpdater.writeFromHTTP(url) && firmware_upgrade_end()) {
+        delay(10 * 1000);
+        esp_restart();
+    }
 }
 
 
@@ -245,23 +232,13 @@ static void firmware_upgrade_from_file(const char *filePath)
 {
     ESP_LOGI(__func__, "Flashing firmware from '%s'...", filePath);
 
-    fs::File file = SD.open(filePath);
-    if (!file) {
-        ESP_LOGE(__func__, "Unable to open file!");
-        return;
-    }
-
-    firmware_upgrade_begin();
-    firmware_upgrade_writeStream(file);
-    if (firmware_upgrade_end()) {
+    if (firmware_upgrade_begin() && FwUpdater.writeFromFile(filePath) && firmware_upgrade_end()) {
         String new_name = String(filePath) + "-installed.bin";
-        file.close();
         SD.remove(new_name);
         SD.rename(filePath, new_name);
         delay(10 * 1000);
         esp_restart();
     }
-    vTaskDelete(NULL);
 }
 
 
@@ -337,16 +314,15 @@ static void startConfigurationServer(bool force_ap = false)
         esp_restart();
     });
     server.on("/upload", HTTP_POST, [&] {
-        server_respond(200, String("Status: <p>") + Update.getErrorStr() + "</p><a href='/restart'>Restart</a>");
+        server_respond(200, String("Status: <p>") + FwUpdater.getErrorStr() + "</p><a href='/restart'>Restart</a>");
     }, [&server]() {
         HTTPUpload& upload = server.upload();
         if (upload.status == UPLOAD_FILE_START) {
             firmware_upgrade_begin();
         }
         else if (upload.status == UPLOAD_FILE_WRITE) {
-            size_t written = firmware_upgrade_write(upload.buf, upload.currentSize);
-            if (written != upload.currentSize) {
-                ESP_LOGE("Upload", "Firmware update: Written %d/%d bytes", written, upload.currentSize);
+            if (!FwUpdater.write(upload.buf, upload.currentSize)) {
+                ESP_LOGE("Upload", "Firmware update: Write error (%d bytes)", upload.currentSize);
             }
         }
         else if (upload.status == UPLOAD_FILE_END) {

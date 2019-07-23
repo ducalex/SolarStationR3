@@ -1,13 +1,15 @@
-static const char *MODULE = "config";
-
-#include "ConfigProvider.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
 #include "stdlib.h"
 #include "string.h"
 #include "stdio.h"
 #include "cJSON.h"
+#include "ConfigProvider.h"
+#ifdef ARDUINO_ARCH_ESP32
+#include "esp32-hal-log.h"
+#endif
 
+static const char *MODULE = "Config";
 #define _debug ESP_ERROR_CHECK_WITHOUT_ABORT
 
 ConfigProvider::ConfigProvider()
