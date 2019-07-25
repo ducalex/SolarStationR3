@@ -40,7 +40,7 @@ const int SENSORS_COUNT = (sizeof(SENSORS) / sizeof(SENSOR_t));
 
 extern ConfigProvider config;
 uint32_t rtc_millis();
-int ulp_wind_read();
+float ulp_wind_read_kph();
 
 SENSOR_t *getSensor(const char* key)
 {
@@ -125,12 +125,11 @@ void pollSensors()
         ESP_LOGE(__func__, "ADS1115 sensor not responding");
     }
 
-    float circ = (2 * 3.141592 * CFG_DBL("sensors.anemometer.radius")) / 100 / 1000;
-    float ws = ulp_wind_read() * 60 * circ * CFG_DBL("sensors.anemometer.calibration");
+    float ws = ulp_wind_read_kph();
     float wd = 0;
     setSensorValue("ws", ws);
     setSensorValue("wd", wd);
-    ESP_LOGI(__func__, "WIND: %d %d", (int)ws, (int)wd);
+    ESP_LOGI(__func__, "WIND: %.2f %.2f", ws, wd);
 }
 
 

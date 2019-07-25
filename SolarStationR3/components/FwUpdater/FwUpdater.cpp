@@ -24,6 +24,7 @@ static const char *ERROR_STRINGS[] = {
     "ERR_INVALID_STATE",
     "ERR_UNSPECIFIED",
     "ERR_READ_ERROR",
+    "ERR_USER_ABORT",
     "UNKNOWN"
 };
 
@@ -73,6 +74,8 @@ void FwUpdaterClass::m_reset()
     m_bytesWritten = 0;
     m_lastError = FWU_OK;
     m_inProgress = false;
+    // m_onProgress_cb = NULL;
+    // m_onVersionCheck_cb = NULL;
 }
 
 bool FwUpdaterClass::end()
@@ -100,9 +103,14 @@ bool FwUpdaterClass::end()
     return true;
 }
 
-void FwUpdaterClass::onProgress(FwProgress callback)
+void FwUpdaterClass::onProgress(FwuProgress callback)
 {
     m_onProgress_cb = callback;
+}
+
+void FwUpdaterClass::onValidateHeader(FwuValidateHeader callback)
+{
+    m_onValidateHeader_cb = callback;
 }
 
 bool FwUpdaterClass::write(uint8_t *data, size_t size)
@@ -123,7 +131,10 @@ bool FwUpdaterClass::write(uint8_t *data, size_t size)
         ESP_LOGI(MODULE, "  Version: %s", m_newAppDescription.version);
         ESP_LOGI(MODULE, "  Compile date: %s %s", m_newAppDescription.date, m_newAppDescription.time);
 
-        // Here we could do some version check
+        if (m_onValidateHeader_cb && !m_onValidateHeader_cb(esp_ota_get_app_description(), &m_newAppDescription)) {
+            m_lastError = FWU_ERR_USER_ABORT;
+            return false;
+        }
     }
 
     if (esp_ota_write(m_otaHandle, data, size) == ESP_OK) {

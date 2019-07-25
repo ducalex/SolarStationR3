@@ -2,7 +2,8 @@
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 
-typedef void (*FwProgress)(size_t done, size_t total);
+typedef void (*FwuProgress)(size_t done, size_t total);
+typedef bool (*FwuValidateHeader)(const esp_app_desc_t *currApplication, const esp_app_desc_t *newApplication);
 
 typedef enum {
     /* Everything is OK */
@@ -27,6 +28,8 @@ typedef enum {
     FWU_ERR_UNSPECIFIED,
     /* Read error occured from an external source (file/http) */
     FWU_ERR_READ_ERROR,
+    /* Update aborted by user */
+    FWU_ERR_USER_ABORT,
     /* N/A */
     FWU_ERR_MAX,
 } fwu_error_t;
@@ -37,7 +40,8 @@ protected:
     const esp_partition_t *m_partition;
     esp_ota_handle_t m_otaHandle;
     esp_app_desc_t m_newAppDescription;
-    FwProgress m_onProgress_cb;
+    FwuProgress m_onProgress_cb;
+    FwuValidateHeader m_onValidateHeader_cb;
     bool m_inProgress;
     size_t m_bytesWritten;
     size_t m_bytesTotal;
@@ -75,7 +79,13 @@ public:
     /**
      * Function to be called on each successful write() call
      */
-    void onProgress(FwProgress callback);
+    void onProgress(FwuProgress callback);
+
+    /**
+     * Function to be called when we receive the new application's header.
+     * The callback should return false it it wants to abort the update.
+     */
+    void onValidateHeader(FwuValidateHeader callback);
 
     /**
      * Write data to flash, the position is automatically advanced
