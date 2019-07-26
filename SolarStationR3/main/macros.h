@@ -17,3 +17,8 @@
   heap_caps_get_info(&info, MALLOC_CAP_DEFAULT); \
   ESP_LOGI("Memory", "Memory: Used: %d KB   Free: %d KB", \
         info.total_allocated_bytes / 1024, info.total_free_bytes / 1024); }
+
+// Lossless float to double conversion. In some cases it will overflow and die of course.
+#define F2D(n) ((double)((long)((n) * 100000)) / 100000)
+// Signed integer to double
+#define I2D(n) ((double)(long)(n))

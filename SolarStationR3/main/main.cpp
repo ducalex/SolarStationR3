@@ -5,6 +5,7 @@
 #include "FwUpdater.h"
 #include "ConfigProvider.h"
 #include "SD.h"
+#include "cJSON.h"
 #include "esp_log.h"
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
@@ -18,20 +19,19 @@
 #include "display.h"
 #include "sensors.h"
 
-#define HTTP_QUEUE_MAX_ITEMS 40
 typedef struct {
-    uint32_t timestamp;
-    uint32_t wake_count;
+    uint64_t timestamp;
     float sensors_data[SENSORS_COUNT];
     uint32_t sensors_status;
-} http_item_t;
+} message_t;
+const int MESSAGE_QUEUE_SIZE = 2048 / sizeof(message_t);
 
 RTC_DATA_ATTR static uint32_t wake_count = 0;
-RTC_DATA_ATTR static uint32_t boot_time = 0;
-RTC_DATA_ATTR static uint32_t start_time = 0;
-RTC_DATA_ATTR static uint32_t next_http_update = 0;
-RTC_DATA_ATTR static http_item_t http_queue[HTTP_QUEUE_MAX_ITEMS];
-RTC_DATA_ATTR static uint16_t http_queue_pos = 0;
+RTC_DATA_ATTR static uint64_t boot_time = 0;
+RTC_DATA_ATTR static uint64_t start_time = 0;
+RTC_DATA_ATTR static uint64_t next_http_update = 0;
+RTC_DATA_ATTR static message_t message_queue[MESSAGE_QUEUE_SIZE];
+RTC_DATA_ATTR static uint16_t message_queue_pos = 0;
 RTC_DATA_ATTR static bool use_sdcard = true;
 static int STATION_POLL_INTERVAL = DEFAULT_STATION_POLL_INTERVAL;
 static int HTTP_UPDATE_INTERVAL = DEFAULT_HTTP_UPDATE_INTERVAL;
@@ -100,7 +100,7 @@ float ulp_wind_read_kph()
 
 
 // True RTC millis count since the ESP32 was last reset
-uint32_t rtc_millis()
+uint64_t rtc_millis()
 {
     struct timeval curTime;
     gettimeofday(&curTime, NULL);
@@ -144,6 +144,7 @@ static void loadConfiguration()
     CFG_LOAD_STR("wifi.password", DEFAULT_WIFI_PASSWORD);
     CFG_LOAD_INT("wifi.timeout", DEFAULT_WIFI_TIMEOUT);
     CFG_LOAD_STR("http.update.url", DEFAULT_HTTP_UPDATE_URL);
+    CFG_LOAD_STR("http.update.type", DEFAULT_HTTP_UPDATE_TYPE);
     CFG_LOAD_STR("http.update.username", DEFAULT_HTTP_UPDATE_USERNAME);
     CFG_LOAD_STR("http.update.password", DEFAULT_HTTP_UPDATE_PASSWORD);
     CFG_LOAD_INT("http.update.interval", DEFAULT_HTTP_UPDATE_INTERVAL);
@@ -365,67 +366,69 @@ static void httpRequest()
     char *url = CFG_STR("HTTP.UPDATE.URL"), *username = CFG_STR("HTTP.UPDATE.USERNAME");
     char *password = CFG_STR("HTTP.UPDATE.PASSWORD");
 
-    ESP_LOGI(__func__, "HTTP: POST request(s) to '%s'...", url);
+    HTTPClient http;
 
-    uint count = 0;
-    char payload[512];
+    http.begin(url);
+    http.setConnectTimeout(CFG_INT("HTTP.TIMEOUT") * 1000);
+    http.setTimeout(CFG_INT("HTTP.TIMEOUT") * 1000);
+    http.addHeader("Content-Type", "application/json");
+    if (strlen(username) > 0) {
+        http.setAuthorization(username, password);
+    }
 
-    for (int i = 0; i < HTTP_QUEUE_MAX_ITEMS; i++) {
-        http_item_t *item = &http_queue[i];
+    cJSON *json = cJSON_CreateObject();
+    cJSON_AddStringToObject(json, "station", CFG_STR("STATION.NAME"));
+    cJSON_AddStringToObject(json, "version", PROJECT_VERSION);
+    cJSON_AddStringToObject(json, "build", esp_app_desc.version);
+    cJSON_AddNumberToObject(json, "uptime", start_time - boot_time);
+    cJSON_AddNumberToObject(json, "cycles", wake_count);
+    cJSON *data = cJSON_AddArrayToObject(json, "data");
+
+    int count = 0;
+
+    for (int i = 0; i < MESSAGE_QUEUE_SIZE; i++) {
+        message_t *item = &message_queue[i];
 
         if (item->timestamp == 0) { // Empty entry
             continue;
         }
-
         count++;
 
-        HTTPClient http; // I don't know if it is reusable
-
-        http.begin(url);
-        http.setTimeout(CFG_INT("HTTP.TIMEOUT") * 1000);
-        http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-        if (strlen(username) > 0) {
-            http.setAuthorization(username, password);
+        cJSON *entry = cJSON_CreateObject();
+        cJSON_AddNumberToObject(entry, "offset", start_time - item->timestamp);
+        cJSON_AddNumberToObject(entry, "status", item->sensors_status);
+        for (int i = 0; i < SENSORS_COUNT; i++) {
+            cJSON_AddNumberToObject(entry, SENSORS[i].key, F2D(item->sensors_data[i]));
         }
-
-        char *sensors_data = serializeSensors(item->sensors_data);
-
-        sprintf(payload,
-            "station=%s&app=%s+%s&ps_http=%.2f&ps_poll=%.2f&uptime=%d" "&offset=%d&cycles=%d&status=%d&%s",
-            CFG_STR("STATION.NAME"),      // Current station name
-            PROJECT_VERSION,              // Build version information
-            esp_app_desc.version,         // Build version information
-            (float)STATION_POLL_INTERVAL / CFG_INT("STATION.POLL_INTERVAL"), // Current power saving mode
-            (float)HTTP_UPDATE_INTERVAL / CFG_INT("HTTP.UPDATE.INTERVAL"),  // Current power saving mode
-            start_time - boot_time,       // Current uptime (ms)
-            item->timestamp - start_time, // Age of entry relative to now (ms)
-            item->wake_count,             // Wake count at time of capture
-            item->sensors_status,         // Each bit represents a sensor. 0 = no error
-            sensors_data                  // Sensors data at time of capture
-        );
-        free(sensors_data);
-
-        Display.printf("\nHTTP POST...");
-
-        ESP_LOGI(__func__, "HTTP(%d): Sending body: '%s'", count, payload);
-        const int httpCode = http.POST(payload);
-        const char *httpBody = http.getString().c_str();
-
-        if (httpCode >= 400) {
-            ESP_LOGW(__func__, "HTTP(%d): Received code: %d  Body: '%s'", count, httpCode, httpBody);
-            Display.printf("Failed (%d)", httpCode);
-        }
-        else if (httpCode > 0) {
-            ESP_LOGI(__func__, "HTTP(%d): Received code: %d  Body: '%s'", count, httpCode, httpBody);
-            Display.printf("OK (%d)", httpCode);
-            memset(item, 0, sizeof(http_item_t)); // Request successful, clear item from queue!
-        }
-        else {
-            Display.printf("Failed (%s)", http.errorToString(httpCode).c_str());
-        }
-
-        http.end();
+        cJSON_AddItemToArray(data, entry);
     }
+
+    char *payload = cJSON_PrintUnformatted(json);
+
+    ESP_LOGI(__func__, "HTTP: Sending %d data frame(s) to '%s'...", count, url);
+    ESP_LOGI(__func__, "HTTP: Body: '%s'", payload);
+    Display.printf("\nHTTP POST...");
+
+    const int httpCode = http.POST(payload);
+
+    cJSON_free(json);
+    free(payload);
+
+    if (httpCode == 200 || httpCode == 204) {
+        ESP_LOGI(__func__, "HTTP: Received code: %d  Body: '%s'", httpCode, http.getString().c_str());
+        Display.printf("OK (%d)", httpCode);
+        memset(message_queue, 0, sizeof(message_queue)); // Request successful, clear items from queue!
+    }
+    else if (httpCode > 0) {
+        ESP_LOGW(__func__, "HTTP: Received code: %d  Body: '%s'", httpCode, http.getString().c_str());
+        Display.printf("Failed (%d)", httpCode);
+    }
+    else {
+        ESP_LOGE(__func__, "HTTP: Request failed: %d", http.errorToString(httpCode).c_str());
+        Display.printf("Failed (%s)", http.errorToString(httpCode).c_str());
+    }
+
+    http.end();
 
     next_http_update = start_time + (HTTP_UPDATE_INTERVAL * 1000);
 }
@@ -435,7 +438,7 @@ void setup()
 {
     printf("\n################### WEATHER STATION (Version: %s) ###################\n\n", PROJECT_VERSION);
     ESP_LOGI(__func__, "Build: %s (%s %s)", esp_app_desc.version, esp_app_desc.date, esp_app_desc.time);
-    ESP_LOGI(__func__, "Uptime: %d seconds (Cycles: %d)", (rtc_millis() - boot_time) / 1000, wake_count);
+    ESP_LOGI(__func__, "Uptime: %llu seconds (Cycles: %lu)", (rtc_millis() - boot_time) / 1000, wake_count);
     PRINT_MEMORY_STATS(); const esp_partition_t *partition = esp_ota_get_running_partition();
     ESP_LOGI(__func__, "Partition: '%s', offset: 0x%x", partition->label, partition->address);
 
@@ -513,12 +516,14 @@ void loop()
     displaySensors();
 
 
-    // Add sensors data to HTTP queue
-    http_item_t *item = &http_queue[http_queue_pos];
+    // Add sensors data to message (HTTP) queue
+    message_t *item = &message_queue[message_queue_pos];
     item->timestamp = start_time;
-    item->wake_count = wake_count;
-    packSensors(item->sensors_data, &item->sensors_status);
-    http_queue_pos = (http_queue_pos + 1) % HTTP_QUEUE_MAX_ITEMS;
+    for (int i = 0; i < SENSORS_COUNT; i++) {
+        item->sensors_data[i] = SENSORS[i].val;
+        item->sensors_status |= ((SENSORS[i].status ? 1 : 0) << i);
+    }
+    message_queue_pos = (message_queue_pos + 1) % MESSAGE_QUEUE_SIZE;
 
 
     // Adjust our intervals based on the battery we've just read

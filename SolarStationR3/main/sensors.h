@@ -2,13 +2,12 @@
 #include "BMP180.h"
 #include "DHT.h"
 
-#define SENSOR(key, unit, desc, avgr) {key, unit, desc, 0, 0, avgr, 0, 0.00, 0.00, 0.00, 0.00}
+#define SENSOR(key, unit, desc, avgr) {key, unit, desc, 0, avgr, 0, 0.00, 0.00, 0.00, 0.00}
 typedef struct {
     char key[8];      // Sensor key used when serializing
     char unit[4];     //
     char desc[16];    //
     short status;     // Status
-    unsigned int updated;    // Last update timestamp
     short nsamples;   // Used in avg calculation
     short count;      //
     float min;        // All time min
@@ -39,7 +38,6 @@ RTC_DATA_ATTR SENSOR_t SENSORS[] = {
 const int SENSORS_COUNT = (sizeof(SENSORS) / sizeof(SENSOR_t));
 
 extern ConfigProvider config;
-uint32_t rtc_millis();
 float ulp_wind_read_kph();
 
 SENSOR_t *getSensor(const char* key)
@@ -61,7 +59,6 @@ static void setSensorValue(const char *key, float value)
     handle->avg = (handle->avg * ((float)(handle->count - 1) / handle->count)) + value / handle->count;
     handle->val = value;
     handle->status = SENSOR_OK;
-    handle->updated = rtc_millis();
     if (value < handle->min || handle->count == 1) handle->min = value;
     if (value > handle->max || handle->count == 1) handle->max = value;
 }
@@ -130,29 +127,6 @@ void pollSensors()
     setSensorValue("ws", ws);
     setSensorValue("wd", wd);
     ESP_LOGI(__func__, "WIND: %.2f %.2f", ws, wd);
-}
-
-
-void packSensors(float *outFrame, uint32_t *outStatus)
-{
-    *outStatus = 0;
-
-    for (int i = 0; i < SENSORS_COUNT; i++) {
-        outFrame[i] = SENSORS[i].val;
-        if (SENSORS[i].status != 0) {
-            *outStatus |= (1 << i);
-        }
-    }
-}
-
-
-char* serializeSensors(float *frame)
-{
-    char *outBuffer = (char*)calloc(SENSORS_COUNT * 16, 1);
-    for (int i = 0; i < SENSORS_COUNT; i++) {
-        sprintf(outBuffer + strlen(outBuffer), "&%s=%.4f", SENSORS[i].key, frame[i]);
-    }
-    return outBuffer;
 }
 
 

@@ -35,6 +35,7 @@
 #define DEFAULT_WIFI_PASSWORD                 ""  // 64 per esp-idf
 #define DEFAULT_WIFI_TIMEOUT                  10  // Seconds
 #define DEFAULT_HTTP_UPDATE_URL               ""  // 128
+#define DEFAULT_HTTP_UPDATE_TYPE           "JSON"  // JSON or InfluxDB
 #define DEFAULT_HTTP_UPDATE_USERNAME          ""  // 64
 #define DEFAULT_HTTP_UPDATE_PASSWORD          ""  // 64
 #define DEFAULT_HTTP_UPDATE_INTERVAL          300 // Seconds
