@@ -110,6 +110,7 @@ void pollSensors()
         adc1 = (int16_t)ads.readADC_SingleEnded(1) * vbit;
         adc2 = (int16_t)ads.readADC_SingleEnded(2) * vbit;
         adc3 = (int16_t)ads.readADC_SingleEnded(3) * vbit;
+        delay(50); // There seem to be some issue with the ADC, as maxounette foresaw
 
         setSensorValue("bat", adc0 * CFG_DBL("POWER.VBAT_MULTIPLIER"));
         setSensorValue("sol", adc1);
