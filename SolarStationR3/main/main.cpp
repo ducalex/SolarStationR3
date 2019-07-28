@@ -33,6 +33,7 @@ RTC_DATA_ATTR static int64_t first_boot_time = 0;
 RTC_DATA_ATTR static int64_t next_http_update = 0;
 RTC_DATA_ATTR static message_t message_queue[MESSAGE_QUEUE_SIZE];
 RTC_DATA_ATTR static int16_t message_queue_pos = 0;
+RTC_DATA_ATTR static bool first_boot_time_adjusted = false;
 RTC_DATA_ATTR static bool use_sdcard = true;
 static int32_t STATION_POLL_INTERVAL = DEFAULT_STATION_POLL_INTERVAL;
 static int32_t HTTP_UPDATE_INTERVAL = DEFAULT_HTTP_UPDATE_INTERVAL;
@@ -533,8 +534,9 @@ void ntpTimeUpdate(const char *host = NTP_SERVER_1)
         settimeofday(&ntp_time, NULL);
         const int64_t time_delta = rtc_millis() - prev_millis;
 
-        if (first_boot_time == 0) {
+        if (!first_boot_time_adjusted) {
             first_boot_time += time_delta;
+            first_boot_time_adjusted = true;
         }
 
         ESP_LOGI("NTP", "Received Time: %.24s, we are %lldms %s",
@@ -552,6 +554,7 @@ void setup()
     ESP_LOGI(__func__, "Partition: '%s', offset: 0x%x", partition->label, partition->address);
 
     if (wake_count++ == 0) {
+        first_boot_time = rtc_millis();
         ulp_wind_start();
     }
 
