@@ -1,15 +1,14 @@
 #include "Arduino.h"
 #include "WiFi.h"
-#include "HTTPClient.h"
 #include "WebServer.h"
 #include "FwUpdater.h"
 #include "ConfigProvider.h"
 #include "SD.h"
 #include "cJSON.h"
 #include "esp_log.h"
-#include "esp_partition.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
+#include "esp_http_client.h"
 #include "driver/rtc_io.h"
 #include "esp32/ulp.h"
 #include "sys/time.h"
@@ -161,6 +160,7 @@ static void loadConfiguration()
     CFG_LOAD_STR("http.update.type", DEFAULT_HTTP_UPDATE_TYPE);
     CFG_LOAD_STR("http.update.username", DEFAULT_HTTP_UPDATE_USERNAME);
     CFG_LOAD_STR("http.update.password", DEFAULT_HTTP_UPDATE_PASSWORD);
+    CFG_LOAD_STR("http.update.database", DEFAULT_HTTP_UPDATE_DATABASE);
     CFG_LOAD_INT("http.update.interval", DEFAULT_HTTP_UPDATE_INTERVAL);
     CFG_LOAD_INT("http.ota.enabled", 1);
     CFG_LOAD_INT("http.timeout", DEFAULT_HTTP_TIMEOUT);
@@ -377,68 +377,121 @@ static void checkActionButton()
 
 static void httpRequest()
 {
-    char *url = CFG_STR("HTTP.UPDATE.URL"), *username = CFG_STR("HTTP.UPDATE.USERNAME");
-    char *password = CFG_STR("HTTP.UPDATE.PASSWORD");
-
-    HTTPClient http;
-
-    http.begin(url);
-    http.setConnectTimeout(CFG_INT("HTTP.TIMEOUT") * 1000);
-    http.setTimeout(CFG_INT("HTTP.TIMEOUT") * 1000);
-    http.addHeader("Content-Type", "application/json");
-    if (strlen(username) > 0) {
-        http.setAuthorization(username, password);
-    }
-
-    cJSON *json = cJSON_CreateObject();
-    cJSON_AddStringToObject(json, "station", CFG_STR("STATION.NAME"));
-    cJSON_AddStringToObject(json, "version", PROJECT_VERSION);
-    cJSON_AddStringToObject(json, "build", esp_app_desc.version);
-    cJSON_AddNumberToObject(json, "uptime", start_time - boot_time);
-    cJSON_AddNumberToObject(json, "cycles", wake_count);
-    cJSON *data = cJSON_AddArrayToObject(json, "data");
-
+    String url = CFG_STR("HTTP.UPDATE.URL");
+    char content_type[40] = "text/plain";
+    char buffer[2048] = "";
     int count = 0;
 
-    for (int i = 0; i < MESSAGE_QUEUE_SIZE; i++) {
-        message_t *item = &message_queue[i];
+    if (strcasecmp(CFG_STR("HTTP.UPDATE.TYPE"), "InfluxDB") == 0)
+    {
+        strcpy(content_type, "application/binary");
 
-        if (item->timestamp == 0) { // Empty entry
-            continue;
-        }
-        count++;
+        if (url.endsWith("/")) { url.remove(url.length() - 1); }
+        url += "/write?db=" + String(CFG_STR("HTTP.UPDATE.DATABASE")) + "&precision=ms";
 
-        cJSON *entry = cJSON_CreateObject();
-        cJSON_AddNumberToObject(entry, "time", first_boot_time + item->uptime);
-        cJSON_AddNumberToObject(entry, "offset", uptime() - item->uptime);
-        cJSON_AddNumberToObject(entry, "status", item->sensors_status);
-        for (int i = 0; i < SENSORS_COUNT; i++) {
-            cJSON_AddNumberToObject(entry, SENSORS[i].key, F2D(item->sensors_data[i]));
+        for (int i = 0; i < MESSAGE_QUEUE_SIZE; i++) {
+            message_t *item = &message_queue[i];
+
+            if (item->uptime == 0) continue; // Empty entry
+            count++;
+
+            sprintf(buffer + strlen(buffer),
+                "%s,station=%s,version=%s,build=%s uptime=%llu",
+                "weather", // Need to add a setting for that
+                CFG_STR("STATION.NAME"),
+                PROJECT_VERSION,
+                esp_app_desc.version,
+                item->uptime
+            );
+
+            for (int j = 0; j < SENSORS_COUNT; j++) {
+                sprintf(buffer + strlen(buffer), ",%s=%.4f", SENSORS[j].key, item->sensors_data[j]);
+            }
+
+            sprintf(buffer + strlen(buffer), " %llu\n", first_boot_time + item->uptime);
         }
-        cJSON_AddItemToArray(data, entry);
+    }
+    else
+    {
+        strcpy(content_type, "application/json");
+
+        cJSON *json = cJSON_CreateObject();
+        cJSON_AddStringToObject(json, "station", CFG_STR("STATION.NAME"));
+        cJSON_AddStringToObject(json, "version", PROJECT_VERSION);
+        cJSON_AddStringToObject(json, "build", esp_app_desc.version);
+        cJSON_AddNumberToObject(json, "uptime", uptime());
+        cJSON_AddNumberToObject(json, "cycles", wake_count);
+        cJSON *data = cJSON_AddArrayToObject(json, "data");
+
+        for (int i = 0; i < MESSAGE_QUEUE_SIZE; i++) {
+            message_t *item = &message_queue[i];
+
+            if (item->uptime == 0) continue; // Empty entry
+            count++;
+
+            cJSON *entry = cJSON_CreateObject();
+            cJSON_AddNumberToObject(entry, "time", first_boot_time + item->uptime);
+            cJSON_AddNumberToObject(entry, "offset", uptime() - item->uptime);
+            cJSON_AddNumberToObject(entry, "status", item->sensors_status);
+            for (int i = 0; i < SENSORS_COUNT; i++) {
+                cJSON_AddNumberToObject(entry, SENSORS[i].key, F2D(item->sensors_data[i]));
+            }
+            cJSON_AddItemToArray(data, entry);
+        }
+
+        cJSON_PrintPreallocated(json, buffer, sizeof(buffer), false);
+        cJSON_free(json);
     }
 
-    char *payload = cJSON_PrintUnformatted(json);
-
-    ESP_LOGI(__func__, "HTTP: Sending %d data frame(s) to '%s'...", count, url);
-    ESP_LOGI(__func__, "HTTP: Body: '%s'", payload);
+    ESP_LOGI(__func__, "HTTP: Sending %d data frame(s) to '%s'...", count, url.c_str());
+    ESP_LOGI(__func__, "HTTP: Body: '%s'", buffer);
     Display.printf("\nHTTP POST...");
 
-    const int httpCode = http.POST(payload);
+    esp_http_client_config_t http_config = {};
 
-    cJSON_free(json);
-    free(payload);
+    http_config.url        = url.c_str();
+    http_config.method     = HTTP_METHOD_POST;
+    http_config.timeout_ms = CFG_INT("HTTP.TIMEOUT") * 1000;
+    if (strlen(CFG_STR("HTTP.UPDATE.USERNAME")) > 0) {
+        http_config.username   = CFG_STR("HTTP.UPDATE.USERNAME");
+        http_config.password   = CFG_STR("HTTP.UPDATE.PASSWORD");
+        http_config.auth_type  = HTTP_AUTH_TYPE_BASIC;
+    }
+
+    // Auth Workaround waiting for https://github.com/espressif/esp-idf/issues/3843
+    if (http_config.username && http_config.password) {
+        url.replace("://", String("://") + http_config.username + ":" + http_config.password + "@");
+        http_config.url = url.c_str();
+    }
+
+    esp_http_client_handle_t client = esp_http_client_init(&http_config);
+    esp_http_client_set_header(client, "Content-Type", content_type);
+    esp_http_client_set_post_field(client, buffer, strlen(buffer));
+    esp_err_t err = esp_http_client_perform(client);
+
+    int httpCode = -1, length = -1;
+    if (err == ESP_OK) {
+        httpCode = esp_http_client_get_status_code(client);
+        length = esp_http_client_read(client, buffer, sizeof(buffer) - 1);
+        buffer[length > 0 ? length : 0] = NULL;
+    }
 
     if (httpCode == 200 || httpCode == 204) {
-        ESP_LOGI(__func__, "HTTP: Received code: %d  Body: '%s'", httpCode, http.getString().c_str());
+        ESP_LOGI(__func__, "HTTP: Received code: %d  Body: '%s'", httpCode, buffer);
         Display.printf("OK (%d)", httpCode);
         memset(message_queue, 0, sizeof(message_queue)); // Request successful, clear items from queue!
     }
     else if (httpCode > 0) {
-        ESP_LOGW(__func__, "HTTP: Received code: %d  Body: '%s'", httpCode, http.getString().c_str());
+        ESP_LOGW(__func__, "HTTP: Received code: %d  Body: '%s'", httpCode, buffer);
         Display.printf("Failed (%d)", httpCode);
     }
     else {
+        ESP_LOGE(__func__, "HTTP: Request failed: %s", esp_err_to_name(err));
+        Display.printf("Failed (%s)", esp_err_to_name(err));
+    }
+
+    esp_http_client_cleanup(client);
+
     next_http_update = boot_time() + (HTTP_UPDATE_INTERVAL * 1000);
 }
 
@@ -484,8 +537,8 @@ void ntpTimeUpdate(const char *host = NTP_SERVER_1)
             first_boot_time += time_delta;
         }
 
-        ESP_LOGI("NTP", "Received Time: %.24s, we are %s %lldms",
-            ctime(&ntp_time.tv_sec), time_delta < 0 ? "ahead" : "behind", abs(time_delta));
+        ESP_LOGI("NTP", "Received Time: %.24s, we are %lldms %s",
+            ctime(&ntp_time.tv_sec), abs(time_delta), time_delta < 0 ? "ahead" : "behind");
     }
 }
 

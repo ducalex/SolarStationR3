@@ -42,6 +42,7 @@
 #define DEFAULT_HTTP_UPDATE_TYPE           "JSON"  // JSON or InfluxDB
 #define DEFAULT_HTTP_UPDATE_USERNAME          ""  // 64
 #define DEFAULT_HTTP_UPDATE_PASSWORD          ""  // 64
+#define DEFAULT_HTTP_UPDATE_DATABASE          ""  // Only InfluxDB uses this for now
 #define DEFAULT_HTTP_UPDATE_INTERVAL          300 // Seconds
 #define DEFAULT_HTTP_TIMEOUT                   30  // Seconds
 #define DEFAULT_POWER_POWER_SAVE_STRATEGY       0 // Not used yet
