@@ -26,6 +26,10 @@
 // ANEMOMETER
 #define ANEMOMETER_PIN 33
 
+// NTP
+#define NTP_SERVER_1 "pool.ntp.org"
+#define NTP_SERVER_2 "time.nist.gov"
+
 // If you rely on those settings don't forget to make erase_flash
 // Otherwise the NVS will have priority
 #define DEFAULT_STATION_NAME     "SolarStationR3" // 64

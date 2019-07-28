@@ -13,6 +13,9 @@
 #include "driver/rtc_io.h"
 #include "esp32/ulp.h"
 #include "sys/time.h"
+#include "sys/socket.h"
+#include "netinet/in.h"
+#include "netdb.h"
 
 #include "config.h"
 #include "macros.h"
@@ -20,21 +23,20 @@
 #include "sensors.h"
 
 typedef struct {
-    uint64_t timestamp;
+    int64_t uptime; // Uptime can work before NTP lock, timestamp cannot
     float sensors_data[SENSORS_COUNT];
     uint32_t sensors_status;
 } message_t;
 const int MESSAGE_QUEUE_SIZE = 2048 / sizeof(message_t);
 
-RTC_DATA_ATTR static uint32_t wake_count = 0;
-RTC_DATA_ATTR static uint64_t boot_time = 0;
-RTC_DATA_ATTR static uint64_t start_time = 0;
-RTC_DATA_ATTR static uint64_t next_http_update = 0;
+RTC_DATA_ATTR static int32_t wake_count = 0;
+RTC_DATA_ATTR static int64_t first_boot_time = 0;
+RTC_DATA_ATTR static int64_t next_http_update = 0;
 RTC_DATA_ATTR static message_t message_queue[MESSAGE_QUEUE_SIZE];
-RTC_DATA_ATTR static uint16_t message_queue_pos = 0;
+RTC_DATA_ATTR static int16_t message_queue_pos = 0;
 RTC_DATA_ATTR static bool use_sdcard = true;
-static int STATION_POLL_INTERVAL = DEFAULT_STATION_POLL_INTERVAL;
-static int HTTP_UPDATE_INTERVAL = DEFAULT_HTTP_UPDATE_INTERVAL;
+static int32_t STATION_POLL_INTERVAL = DEFAULT_STATION_POLL_INTERVAL;
+static int32_t HTTP_UPDATE_INTERVAL = DEFAULT_HTTP_UPDATE_INTERVAL;
 
 ConfigProvider config;
 
@@ -100,11 +102,23 @@ float ulp_wind_read_kph()
 
 
 // True RTC millis count since the ESP32 was last reset
-uint64_t rtc_millis()
+int64_t rtc_millis()
 {
     struct timeval curTime;
     gettimeofday(&curTime, NULL);
     return (((uint64_t)curTime.tv_sec * 1000000) + curTime.tv_usec) / 1000;
+}
+
+
+int64_t uptime()
+{
+    return (rtc_millis() - first_boot_time);
+}
+
+
+int64_t boot_time()
+{
+    return (rtc_millis() - millis());
 }
 
 
@@ -395,7 +409,8 @@ static void httpRequest()
         count++;
 
         cJSON *entry = cJSON_CreateObject();
-        cJSON_AddNumberToObject(entry, "offset", start_time - item->timestamp);
+        cJSON_AddNumberToObject(entry, "time", first_boot_time + item->uptime);
+        cJSON_AddNumberToObject(entry, "offset", uptime() - item->uptime);
         cJSON_AddNumberToObject(entry, "status", item->sensors_status);
         for (int i = 0; i < SENSORS_COUNT; i++) {
             cJSON_AddNumberToObject(entry, SENSORS[i].key, F2D(item->sensors_data[i]));
@@ -424,13 +439,54 @@ static void httpRequest()
         Display.printf("Failed (%d)", httpCode);
     }
     else {
-        ESP_LOGE(__func__, "HTTP: Request failed: %d", http.errorToString(httpCode).c_str());
-        Display.printf("Failed (%s)", http.errorToString(httpCode).c_str());
+    next_http_update = boot_time() + (HTTP_UPDATE_INTERVAL * 1000);
+}
+
+
+// We don't use the built-in sntp because we need to be synchronous and also detect drift
+void ntpTimeUpdate(const char *host = NTP_SERVER_1)
+{
+    int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    struct hostent *server = gethostbyname(host);
+    struct sockaddr_in serv_addr = {};
+    struct timeval timeout = { 2, 0 };
+    struct timeval ntp_time = {0, 0};
+
+    if (server == NULL) {
+        ESP_LOGE("NTP", "Unable to resolve NTP server");
+        return;
     }
 
-    http.end();
+    memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(123);
 
-    next_http_update = start_time + (HTTP_UPDATE_INTERVAL * 1000);
+    uint32_t ntp_packet[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    ((uint8_t*)ntp_packet)[0] = 0x1b; // li, vn, mode.
+
+    int64_t prev_millis = rtc_millis();
+
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    connect(sockfd, (sockaddr *)&serv_addr, sizeof(serv_addr));
+    send(sockfd, &ntp_packet, sizeof(ntp_packet), 0);
+
+    if (recv(sockfd, &ntp_packet, sizeof(ntp_packet), 0) < 0) {
+        ESP_LOGE("NTP", "Error receiving NTP packet");
+    }
+    else {
+        prev_millis += (rtc_millis() - prev_millis) / 2; // Approx transport time
+        ntp_time.tv_sec = ntohl(ntp_packet[10]) - 2208988800UL; // DIFF_SEC_1900_1970
+        ntp_time.tv_usec = ((int64_t)ntohl(ntp_packet[11]) * 1000000) >> 32;
+        settimeofday(&ntp_time, NULL);
+        const int64_t time_delta = rtc_millis() - prev_millis;
+
+        if (first_boot_time == 0) {
+            first_boot_time += time_delta;
+        }
+
+        ESP_LOGI("NTP", "Received Time: %.24s, we are %s %lldms",
+            ctime(&ntp_time.tv_sec), time_delta < 0 ? "ahead" : "behind", abs(time_delta));
+    }
 }
 
 
@@ -438,17 +494,13 @@ void setup()
 {
     printf("\n################### WEATHER STATION (Version: %s) ###################\n\n", PROJECT_VERSION);
     ESP_LOGI(__func__, "Build: %s (%s %s)", esp_app_desc.version, esp_app_desc.date, esp_app_desc.time);
-    ESP_LOGI(__func__, "Uptime: %llu seconds (Cycles: %lu)", (rtc_millis() - boot_time) / 1000, wake_count);
+    ESP_LOGI(__func__, "Uptime: %llu seconds (Cycles: %lu)", uptime() / 1000, wake_count);
     PRINT_MEMORY_STATS(); const esp_partition_t *partition = esp_ota_get_running_partition();
     ESP_LOGI(__func__, "Partition: '%s', offset: 0x%x", partition->label, partition->address);
 
-    if (wake_count == 0) {
-        boot_time = rtc_millis();
+    if (wake_count++ == 0) {
         ulp_wind_start();
     }
-
-    start_time = rtc_millis();
-    wake_count++;
 
     // Power up our peripherals
     pinMode(PERIPH_POWER_PIN, OUTPUT);
@@ -473,7 +525,7 @@ void setup()
 
     ESP_LOGI(__func__, "Station name: %s", CFG_STR("STATION.NAME"));
     Display.printf("# %s #\n", CFG_STR("STATION.NAME"));
-    Display.printf("SD: %d | Up: %dm\n", use_sdcard ? 1 : 0, (start_time - boot_time) / 60000);
+    Display.printf("SD: %d | Up: %dm\n", use_sdcard ? 1 : 0, uptime() / 60000);
 
     // Our button can always interrupt light and deep sleep
     esp_sleep_enable_ext0_wakeup((gpio_num_t)ACTION_BUTTON_PIN, LOW);
@@ -491,7 +543,7 @@ void loop()
     const int  wifi_timeout_ms = CFG_INT("WIFI.TIMEOUT") * 1000;
 
     const bool wifi_available = strlen(wifi_ssid) > 0;
-    const bool http_available = strlen(CFG_STR("HTTP.UPDATE.URL")) > 0 && start_time >= next_http_update;
+    const bool http_available = strlen(CFG_STR("HTTP.UPDATE.URL")) > 0 && rtc_millis() >= (next_http_update - 5000);
 
     if (!wifi_available) {
         ESP_LOGI(__func__, "WiFi: No configuration");
@@ -518,7 +570,7 @@ void loop()
 
     // Add sensors data to message (HTTP) queue
     message_t *item = &message_queue[message_queue_pos];
-    item->timestamp = start_time;
+    item->uptime = uptime();
     for (int i = 0; i < SENSORS_COUNT; i++) {
         item->sensors_data[i] = SENSORS[i].val;
         item->sensors_status |= ((SENSORS[i].status ? 1 : 0) << i);
@@ -550,7 +602,8 @@ void loop()
             String local_ip = WiFi.localIP().toString();
             ESP_LOGI(__func__, "WiFi: Connected to: '%s' with IP %s", wifi_ssid, local_ip.c_str());
             Display.printf("Connected!\nIP: %s", local_ip.c_str());
-
+            // We don't have to do it every time, but since our RTC drifts 250ms per minute...
+            ntpTimeUpdate();
             // Now do the HTTP Request
             httpRequest();
         }
