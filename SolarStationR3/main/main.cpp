@@ -376,7 +376,14 @@ static void checkActionButton()
 }
 
 
-static void httpRequest()
+static void httpPullData()
+{
+    // Here we will do an HTTP request to see if messages were left for us.
+    // Config and firmware updates for example, or reboot/startconfigserver
+}
+
+
+static void httpPushData()
 {
     String url = CFG_STR("HTTP.UPDATE.URL");
     char content_type[40] = "text/plain";
@@ -660,8 +667,10 @@ void loop()
             Display.printf("Connected!\nIP: %s", local_ip.c_str());
             // We don't have to do it every time, but since our RTC drifts 250ms per minute...
             ntpTimeUpdate();
-            // Now do the HTTP Request
-            httpRequest();
+            // Now push all our sensors data over HTTP
+            httpPushData();
+            // Now check if messages are waiting for us (should be before push?)
+            httpPullData();
         }
         else {
             ESP_LOGW(__func__, "WiFi: Failed to connect to: '%s'", wifi_ssid);
