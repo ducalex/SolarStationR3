@@ -152,6 +152,7 @@ static void loadConfiguration()
     }
 
     CFG_LOAD_STR("station.name", DEFAULT_STATION_NAME);
+    CFG_LOAD_STR("station.group", DEFAULT_STATION_GROUP);
     CFG_LOAD_INT("station.poll_interval", DEFAULT_STATION_POLL_INTERVAL);
     CFG_LOAD_INT("station.display_timeout", DEFAULT_STATION_DISPLAY_TIMEOUT);
     CFG_LOAD_STR("wifi.ssid", DEFAULT_WIFI_SSID);
@@ -405,7 +406,7 @@ static void httpPushData()
 
             sprintf(buffer + strlen(buffer),
                 "%s,station=%s,version=%s,build=%s uptime=%llu",
-                "weather", // Need to add a setting for that
+                CFG_STR("STATION.GROUP"),
                 CFG_STR("STATION.NAME"),
                 PROJECT_VERSION,
                 esp_app_desc.version,
@@ -425,6 +426,7 @@ static void httpPushData()
 
         cJSON *json = cJSON_CreateObject();
         cJSON_AddStringToObject(json, "station", CFG_STR("STATION.NAME"));
+        cJSON_AddStringToObject(json, "group", CFG_STR("STATION.GROUP"));
         cJSON_AddStringToObject(json, "version", PROJECT_VERSION);
         cJSON_AddStringToObject(json, "build", esp_app_desc.version);
         cJSON_AddNumberToObject(json, "uptime", uptime());
@@ -586,7 +588,7 @@ void setup()
 
     loadConfiguration();
 
-    ESP_LOGI(__func__, "Station name: %s", CFG_STR("STATION.NAME"));
+    ESP_LOGI(__func__, "Station name: '%s', group: '%s'", CFG_STR("STATION.NAME"), CFG_STR("STATION.GROUP"));
     Display.printf("# %s #\n", CFG_STR("STATION.NAME"));
     Display.printf("SD: %d | Up: %dm\n", use_sdcard ? 1 : 0, uptime() / 60000);
 
