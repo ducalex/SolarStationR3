@@ -22,8 +22,8 @@
 #include "sensors.h"
 
 typedef struct {
-    int64_t uptime; // Uptime can work before NTP lock, timestamp cannot
-    float sensors_data[SENSORS_COUNT];
+    int64_t  uptime; // Uptime can work before NTP lock, timestamp cannot
+    float    sensors_data[SENSORS_COUNT];
     uint32_t sensors_status;
 } message_t;
 const int MESSAGE_QUEUE_SIZE = 2048 / sizeof(message_t);
@@ -31,6 +31,7 @@ const int MESSAGE_QUEUE_SIZE = 2048 / sizeof(message_t);
 RTC_DATA_ATTR static int32_t wake_count = 0;
 RTC_DATA_ATTR static int64_t first_boot_time = 0;
 RTC_DATA_ATTR static int64_t next_http_update = 0;
+RTC_DATA_ATTR static int64_t ntp_time_delta = 0;
 RTC_DATA_ATTR static message_t message_queue[MESSAGE_QUEUE_SIZE];
 RTC_DATA_ATTR static int16_t message_queue_pos = 0;
 RTC_DATA_ATTR static bool first_boot_time_adjusted = false;
@@ -390,7 +391,7 @@ static void httpPushData()
 {
     String url = CFG_STR("HTTP.UPDATE.URL");
     char content_type[40] = "text/plain";
-    char buffer[2048] = "";
+    char buffer[2048];
     int count = 0;
 
     if (strcasecmp(CFG_STR("HTTP.UPDATE.TYPE"), "InfluxDB") == 0)
@@ -400,6 +401,17 @@ static void httpPushData()
         if (url.endsWith("/")) { url.remove(url.length() - 1); }
         url += "/write?db=" + String(CFG_STR("HTTP.UPDATE.DATABASE")) + "&precision=ms";
 
+        sprintf(buffer,
+            "%s_status,station=%s,version=%s,build=%s ntp_delta=%lld,rtc_time=%llu,uptime=%llu\n",
+            CFG_STR("STATION.GROUP"),
+            CFG_STR("STATION.NAME"),
+            PROJECT_VERSION,
+            esp_app_desc.version,
+            ntp_time_delta,
+            rtc_millis(),
+            uptime()
+        );
+
         for (int i = 0; i < MESSAGE_QUEUE_SIZE; i++) {
             message_t *item = &message_queue[i];
 
@@ -407,12 +419,9 @@ static void httpPushData()
             count++;
 
             sprintf(buffer + strlen(buffer),
-                "%s,station=%s,version=%s,build=%s uptime=%llu,status=%u",
+                "%s_sensors,station=%s status=%u",
                 CFG_STR("STATION.GROUP"),
                 CFG_STR("STATION.NAME"),
-                PROJECT_VERSION,
-                esp_app_desc.version,
-                item->uptime,
                 item->sensors_status
             );
 
@@ -434,6 +443,7 @@ static void httpPushData()
         cJSON_AddStringToObject(json, "build", esp_app_desc.version);
         cJSON_AddNumberToObject(json, "uptime", uptime());
         cJSON_AddNumberToObject(json, "cycles", wake_count);
+        cJSON_AddNumberToObject(json, "ntp_delta", ntp_time_delta);
         cJSON *data = cJSON_AddArrayToObject(json, "data");
 
         for (int i = 0; i < MESSAGE_QUEUE_SIZE; i++) {
@@ -544,15 +554,15 @@ void ntpTimeUpdate(const char *host = NTP_SERVER_1)
         ntp_time.tv_sec = ntohl(ntp_packet[10]) - 2208988800UL; // DIFF_SEC_1900_1970
         ntp_time.tv_usec = ((int64_t)ntohl(ntp_packet[11]) * 1000000) >> 32;
         settimeofday(&ntp_time, NULL);
-        const int64_t time_delta = rtc_millis() - prev_millis;
+        ntp_time_delta = rtc_millis() - prev_millis;
 
         if (!first_boot_time_adjusted) {
-            first_boot_time += time_delta;
+            first_boot_time += ntp_time_delta;
             first_boot_time_adjusted = true;
         }
 
-        ESP_LOGI("NTP", "Received Time: %.24s, we are %lldms %s",
-            ctime(&ntp_time.tv_sec), abs(time_delta), time_delta < 0 ? "ahead" : "behind");
+        ESP_LOGI("NTP", "Received Time: %.24s, we were %lldms %s",
+            ctime(&ntp_time.tv_sec), abs(ntp_time_delta), ntp_time_delta < 0 ? "ahead" : "behind");
     }
 }
 
@@ -672,10 +682,10 @@ void loop()
             Display.printf("Connected!\nIP: %s", local_ip.c_str());
             // We don't have to do it every time, but since our RTC drifts 250ms per minute...
             ntpTimeUpdate();
-            // Now push all our sensors data over HTTP
-            httpPushData();
-            // Now check if messages are waiting for us (should be before push?)
+            // First check if messages are waiting for us
             httpPullData();
+            // Then push all our sensors data over HTTP
+            httpPushData();
         }
         else {
             ESP_LOGW(__func__, "WiFi: Failed to connect to: '%s'", wifi_ssid);
