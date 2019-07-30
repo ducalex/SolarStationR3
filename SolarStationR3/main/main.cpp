@@ -405,12 +405,13 @@ static void httpPushData()
             count++;
 
             sprintf(buffer + strlen(buffer),
-                "%s,station=%s,version=%s,build=%s uptime=%llu",
+                "%s,station=%s,version=%s,build=%s uptime=%llu,status=%u",
                 CFG_STR("STATION.GROUP"),
                 CFG_STR("STATION.NAME"),
                 PROJECT_VERSION,
                 esp_app_desc.version,
-                item->uptime
+                item->uptime,
+                item->sensors_status
             );
 
             for (int j = 0; j < SENSORS_COUNT; j++) {
@@ -483,7 +484,7 @@ static void httpPushData()
     if (err == ESP_OK) {
         httpCode = esp_http_client_get_status_code(client);
         length = esp_http_client_read(client, buffer, sizeof(buffer) - 1);
-        buffer[length > 0 ? length : 0] = NULL;
+        buffer[length > 0 ? length : 0] = '\0';
     }
 
     if (httpCode == 200 || httpCode == 204) {
