@@ -352,15 +352,17 @@ static void startConfigurationServer(bool force_ap = false)
 
     Display.clear();
     Display.printf("Configuration Server:\n\n");
-    Display.printf(" SSID: %s\n\n", ssid);
-    Display.printf(" http://%s\n", server_ip.toString().c_str());
+    Display.printf("SSID: %s\n\n", ssid);
+    Display.printf("http://%s\n\n", server_ip.toString().c_str());
+    Display.printf("Mode: %s\n", WiFi.getMode() == WIFI_MODE_STA ? "Local Client" : "Access point");
+    Display.printf("(Press to toggle)");
 
     // Just in case the user is still holding the button
     debounceButton(ACTION_BUTTON_PIN, LOW, 10000);
 
     while (millis() < server_timeout || server.client().connected()) {
         server.handleClient();
-        if (debounceButton(ACTION_BUTTON_PIN, LOW, 500)) {
+        if (debounceButton(ACTION_BUTTON_PIN, LOW, 250)) {
             server.stop();
             startConfigurationServer(!force_ap);
         }
