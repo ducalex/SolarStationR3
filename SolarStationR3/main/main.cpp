@@ -391,7 +391,7 @@ static void httpPushData()
 {
     String url = CFG_STR("HTTP.UPDATE.URL");
     char content_type[40] = "text/plain";
-    char buffer[2048];
+    char buffer[2048] = "";
     int count = 0;
 
     if (strcasecmp(CFG_STR("HTTP.UPDATE.TYPE"), "InfluxDB") == 0)
@@ -400,17 +400,6 @@ static void httpPushData()
 
         if (url.endsWith("/")) { url.remove(url.length() - 1); }
         url += "/write?db=" + String(CFG_STR("HTTP.UPDATE.DATABASE")) + "&precision=ms";
-
-        sprintf(buffer,
-            "%s_status,station=%s,version=%s,build=%s ntp_delta=%lld,rtc_time=%llu,uptime=%llu\n",
-            CFG_STR("STATION.GROUP"),
-            CFG_STR("STATION.NAME"),
-            PROJECT_VERSION,
-            esp_app_desc.version,
-            ntp_time_delta,
-            rtc_millis(),
-            uptime()
-        );
 
         for (int i = 0; i < MESSAGE_QUEUE_SIZE; i++) {
             message_t *item = &message_queue[i];
@@ -431,6 +420,18 @@ static void httpPushData()
 
             sprintf(buffer + strlen(buffer), " %llu\n", first_boot_time + item->uptime);
         }
+
+        sprintf(buffer + strlen(buffer),
+            "%s_status,station=%s,version=%s,build=%s ntp_delta=%lld,data_points=%d,power_save=0,uptime=%llu %llu",
+            CFG_STR("STATION.GROUP"),
+            CFG_STR("STATION.NAME"),
+            PROJECT_VERSION,
+            esp_app_desc.version,
+            ntp_time_delta,
+            count,
+            uptime(),
+            boot_time()
+        );
     }
     else
     {
