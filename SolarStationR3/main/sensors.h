@@ -145,11 +145,17 @@ void pollSensors()
 
 void displaySensors()
 {
-    #define P_SENS(key) getSensor(key)->val, getSensor(key)->unit
-    Display.printf("\nVolt: %.2f%s %.2f%s", P_SENS("bat"), P_SENS("sol"));
-    Display.printf("\nLight: %.0f%s %.0f%s", P_SENS("l1"), P_SENS("l2"));
-    Display.printf("\nTemp: %.2f%s %.2f%s", P_SENS("t1"), P_SENS("t2"));
-    Display.printf("\nHumidity: %.0f%s %.0f%s", P_SENS("h1"), P_SENS("h2"));
-    Display.printf("\nPres: %.2f%s %.2f%s", P_SENS("p1"), P_SENS("p2"));
-    Display.printf("\nWind: %.2f%s %.2f%s", P_SENS("ws"), P_SENS("wd"));
+    String content = CFG_STR("STATION.DISPLAY_CONTENT");
+    char buffer1[32], buffer2[32];
+
+    for (int i = 0; i < SENSORS_COUNT; i++) {
+        for (int d = 0; d < 6; d++) { // That's a very lazy way to do it :S
+            sprintf(buffer1, "%%.%df%%s", d);
+            sprintf(buffer2, buffer1, SENSORS[i].val, SENSORS[i].unit);
+            sprintf(buffer1, "$%s.%d", SENSORS[i].key, d);
+            content.replace(buffer1, buffer2);
+        }
+    }
+
+    Display.printf("\n%s", content.c_str());
 }

@@ -156,6 +156,7 @@ static void loadConfiguration()
     CFG_LOAD_STR("station.group", DEFAULT_STATION_GROUP);
     CFG_LOAD_INT("station.poll_interval", DEFAULT_STATION_POLL_INTERVAL);
     CFG_LOAD_INT("station.display_timeout", DEFAULT_STATION_DISPLAY_TIMEOUT);
+    CFG_LOAD_STR("station.display_content", DEFAULT_STATION_DISPLAY_CONTENT);
     CFG_LOAD_STR("wifi.ssid", DEFAULT_WIFI_SSID);
     CFG_LOAD_STR("wifi.password", DEFAULT_WIFI_PASSWORD);
     CFG_LOAD_INT("wifi.timeout", DEFAULT_WIFI_TIMEOUT);
@@ -325,6 +326,17 @@ static void startConfigurationServer(bool force_ap = false)
         body += "<form action='/upload' method='post' enctype='multipart/form-data'><label>Update firmware:</label>";
         body += "<input type='file' name='file' style='max-width:50%'><input type='submit' value='Update'></form>";
         body.replace("\t", " ");
+
+        body += "<div><hr>Sensors:<table>";
+        for (int i = 0; i < SENSORS_COUNT; i++) {
+            body += "<tr>";
+            body += "<td>" + String(SENSORS[i].key) + "</td>";
+            body += "<td>" + String(SENSORS[i].desc) + "</td>";
+            body += "<td>" + String(SENSORS[i].val) + "</td>";
+            body += "<td>" + String(SENSORS[i].unit) + "</td>";
+            body += "</tr>";
+        }
+        body += "</table></div>";
 
         server_respond(200, body);
     });

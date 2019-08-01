@@ -32,26 +32,32 @@
 
 // If you rely on those settings don't forget to make erase_flash
 // Otherwise the NVS will have priority
-#define DEFAULT_STATION_NAME     "SolarStationR3"  // Used as device ID by InfluxDB and SQL, and as group by Adafruit.io
-#define DEFAULT_STATION_GROUP           "weather"  // Used as measurement name in InfluxDB and table name in SQL
-#define DEFAULT_STATION_POLL_INTERVAL          60  // Seconds
-#define DEFAULT_STATION_DISPLAY_TIMEOUT        10  // Seconds
-#define DEFAULT_WIFI_SSID                      ""  // 32 per esp-idf
-#define DEFAULT_WIFI_PASSWORD                  ""  // 64 per esp-idf
-#define DEFAULT_WIFI_TIMEOUT                   10  // Seconds
-#define DEFAULT_HTTP_UPDATE_URL                ""  // 128
-#define DEFAULT_HTTP_UPDATE_TYPE           "JSON"  // JSON or InfluxDB
-#define DEFAULT_HTTP_UPDATE_USERNAME           ""  // 64
-#define DEFAULT_HTTP_UPDATE_PASSWORD           ""  // 64
-#define DEFAULT_HTTP_UPDATE_DATABASE           ""  // Only InfluxDB uses this for now
-#define DEFAULT_HTTP_UPDATE_INTERVAL          300 // Seconds
-#define DEFAULT_HTTP_TIMEOUT                   30  // Seconds
-#define DEFAULT_POWER_POWER_SAVE_STRATEGY       0 // Not used yet
-#define DEFAULT_POWER_POLL_LOW_VBAT_TRESHOLD  3.7 // Volts  (Maybe we should use percent so it works on any battery?)
-#define DEFAULT_POWER_HTTP_LOW_VBAT_TRESHOLD  3.5 // Volts  (Maybe we should use percent so it works on any battery?)
-#define DEFAULT_POWER_VBAT_MULTIPLIER         2.0 // Factor (If there is a voltage divider)
-#define DEFAULT_SENSORS_ANEMOMETER_RADIUS      15 // centimeters
-#define DEFAULT_SENSORS_ANEMOMETER_CALIBRATION  1 // The calculated value is multiplied by this
+#define DEFAULT_STATION_NAME                   "SolarStationR3"  // Used as device ID by InfluxDB and SQL, and as group by Adafruit.io
+#define DEFAULT_STATION_GROUP                  "weather"         // Used as measurement prefix in InfluxDB and table prefix in SQL
+#define DEFAULT_STATION_POLL_INTERVAL          60                // Seconds
+#define DEFAULT_STATION_DISPLAY_TIMEOUT        10                // Seconds
+#define DEFAULT_STATION_DISPLAY_CONTENT        "Volt: $bat.2 $sol.2\n"   \
+                                               "Light: $l1.0 $l2.0\n"    \
+                                               "Temp: $t1.2 $t2.2\n"     \
+                                               "Humidity: $h1.0 $h2.0\n" \
+                                               "Pres.: $p1.2 $p2.2\n"    \
+                                               "Wind: $ws.2 $wd.0"
+#define DEFAULT_WIFI_SSID                      ""      // 32 per esp-idf
+#define DEFAULT_WIFI_PASSWORD                  ""      // 64 per esp-idf
+#define DEFAULT_WIFI_TIMEOUT                   10      // Seconds
+#define DEFAULT_HTTP_UPDATE_URL                ""      // 128
+#define DEFAULT_HTTP_UPDATE_TYPE               "JSON"  // JSON or InfluxDB
+#define DEFAULT_HTTP_UPDATE_USERNAME           ""      // 64
+#define DEFAULT_HTTP_UPDATE_PASSWORD           ""      // 64
+#define DEFAULT_HTTP_UPDATE_DATABASE           ""      // Only InfluxDB uses this for now
+#define DEFAULT_HTTP_UPDATE_INTERVAL           300     // Seconds
+#define DEFAULT_HTTP_TIMEOUT                   30      // Seconds
+#define DEFAULT_POWER_POWER_SAVE_STRATEGY      0       // Not used yet
+#define DEFAULT_POWER_POLL_LOW_VBAT_TRESHOLD   3.7     // Volts  (Maybe we should use percent so it works on any battery?)
+#define DEFAULT_POWER_HTTP_LOW_VBAT_TRESHOLD   3.5     // Volts  (Maybe we should use percent so it works on any battery?)
+#define DEFAULT_POWER_VBAT_MULTIPLIER          2.0     // Factor (If there is a voltage divider)
+#define DEFAULT_SENSORS_ANEMOMETER_RADIUS      15      // centimeters
+#define DEFAULT_SENSORS_ANEMOMETER_CALIBRATION 1       // The calculated value is multiplied by this
 
 // ConfigProvider settings
 #define CONFIG_USE_FILE "/sd/config.json"
