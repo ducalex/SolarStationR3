@@ -62,7 +62,7 @@ static uint32_t readRawPressure(bmp180_dev_t *dev)
 
 bmp180_dev_t* BMP180_init(uint8_t i2c_address, uint8_t oversampling)
 {
-    if (!Wire.begin()) {
+    if (!Wire.begin() || readInt(i2c_address, BMP180_CMD_WHO_AM_I, 1) != 0x55) {
         return NULL;
     }
 
@@ -70,9 +70,6 @@ bmp180_dev_t* BMP180_init(uint8_t i2c_address, uint8_t oversampling)
 
     dev->i2c_address = i2c_address;
     dev->oversampling = oversampling;
-
-    // ID
-    dev->who = readInt(i2c_address, BMP180_CMD_WHO_AM_I, 1);
 
     /* read calibration data */
     dev->ac1 = readInt(i2c_address, BMP180_CAL_AC1, 2);
@@ -87,7 +84,7 @@ bmp180_dev_t* BMP180_init(uint8_t i2c_address, uint8_t oversampling)
     dev->mc = readInt(i2c_address, BMP180_CAL_MC, 2);
     dev->md = readInt(i2c_address, BMP180_CAL_MD, 2);
 
-    if (!(dev->who == 0x55 && dev->ac1 && dev->ac2 && dev->ac3 && dev->ac4 && dev->ac5 && dev->ac6)) {
+    if (!(dev->ac1 && dev->ac2 && dev->ac3 && dev->ac4 && dev->ac5 && dev->ac6)) {
         free(dev);
         return NULL;
     }
