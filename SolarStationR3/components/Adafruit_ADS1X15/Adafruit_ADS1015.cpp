@@ -97,8 +97,10 @@ Adafruit_ADS1115::Adafruit_ADS1115(uint8_t i2cAddress)
     @brief  Sets up the HW (reads coefficients values, etc.)
 */
 /**************************************************************************/
-void Adafruit_ADS1015::begin() {
+bool Adafruit_ADS1015::begin() {
   Wire.begin();
+  Wire.beginTransmission(ADS1015_ADDRESS);
+  return Wire.endTransmission() == 0;
 }
 
 /**************************************************************************/

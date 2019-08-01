@@ -1,4 +1,5 @@
 #include "Adafruit_ADS1015.h"
+#include "Adafruit_BME280.h"
 #include "BMP180.h"
 #include "DHT.h"
 
@@ -95,12 +96,23 @@ void pollSensors()
         setSensorError("p1", SENSOR_ERR_UNKNOWN);
         ESP_LOGE(__func__, "BMP180 sensor not responding");
     }
-
-    Wire.beginTransmission(ADS1015_ADDRESS);
-
-    if (Wire.endTransmission() == 0) {
-        Adafruit_ADS1115 ads;
-        ads.begin();
+/*
+    Adafruit_BME280 bme280;
+    if (bme280.begin()) {
+        //setSensorValue("t2", t = bme280.readTemperature());
+        t = bme280.readTemperature();
+        setSensorValue("h2", h = bme280.readHumidity());
+        setSensorValue("p2", p = bme280.readPressure() / 1000);
+        ESP_LOGI(__func__, "BME: %.2f %.2f %.2f", t, h, p);
+    } else {
+        //setSensorError("t2", SENSOR_ERR_UNKNOWN);
+        setSensorError("h2", SENSOR_ERR_UNKNOWN);
+        setSensorError("p2", SENSOR_ERR_UNKNOWN);
+        ESP_LOGE(__func__, "BME280 sensor not responding");
+    }
+ */
+    Adafruit_ADS1115 ads;
+    if (ads.begin()) {
         ads.setGain(GAIN_ONE); // real range is vdd + 0.3
 
         float adc0 = 0, adc1 = 0, adc2 = 0, adc3 = 0;
