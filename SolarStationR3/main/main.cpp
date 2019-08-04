@@ -32,9 +32,10 @@ RTC_DATA_ATTR static int32_t wake_count = 0;
 RTC_DATA_ATTR static int64_t first_boot_time = 0;
 RTC_DATA_ATTR static int64_t next_http_update = 0;
 RTC_DATA_ATTR static int64_t ntp_time_delta = 0;
+RTC_DATA_ATTR static int64_t ntp_last_adjustment = 0;
+RTC_DATA_ATTR static double  time_correction = 0;
 RTC_DATA_ATTR static message_t message_queue[MESSAGE_QUEUE_SIZE];
 RTC_DATA_ATTR static int16_t message_queue_pos = 0;
-RTC_DATA_ATTR static bool first_boot_time_adjusted = false;
 RTC_DATA_ATTR static bool use_sdcard = true;
 static int32_t STATION_POLL_INTERVAL = DEFAULT_STATION_POLL_INTERVAL;
 static int32_t HTTP_UPDATE_INTERVAL = DEFAULT_HTTP_UPDATE_INTERVAL;
@@ -102,12 +103,11 @@ float ulp_wind_read_kph()
 }
 
 
-// True RTC millis count since the ESP32 was last reset
 int64_t rtc_millis()
 {
     struct timeval curTime;
     gettimeofday(&curTime, NULL);
-    return (((uint64_t)curTime.tv_sec * 1000000) + curTime.tv_usec) / 1000;
+    return (((int64_t)curTime.tv_sec * 1000000) + curTime.tv_usec) / 1000;
 }
 
 
@@ -192,11 +192,22 @@ static void hibernate()
     PRINT_MEMORY_STATS();
 
     // Sleep
+    // To do: account for ESP32 boot time before millis timer is started (100+ ms)
     int sleep_time = (STATION_POLL_INTERVAL * 1000) - millis();
 
     if (sleep_time < 0) {
         ESP_LOGW(__func__, "Bogus sleep time, did we spend too much time processing?");
         sleep_time = 10 * 1000; // We could continue to loop() instead but I fear memory leaks
+    }
+
+    if (time_correction != 0.00) {
+        int correction = round(time_correction * sleep_time);
+        ESP_LOGI(__func__, "Time correction: Sleep: %dms Clock: %dms", -correction, correction);
+        sleep_time += -correction;
+        struct timeval time;
+        gettimeofday(&time, NULL);
+        time.tv_usec += correction * 1000;
+        settimeofday(&time, NULL);
     }
 
     ESP_LOGI(__func__, "Deep sleeping for %dms", sleep_time);
@@ -567,12 +578,18 @@ void ntpTimeUpdate(const char *host = NTP_SERVER_1)
         ntp_time.tv_sec = ntohl(ntp_packet[10]) - 2208988800UL; // DIFF_SEC_1900_1970
         ntp_time.tv_usec = ((int64_t)ntohl(ntp_packet[11]) * 1000000) >> 32;
         settimeofday(&ntp_time, NULL);
-        ntp_time_delta = rtc_millis() - prev_millis;
 
-        if (!first_boot_time_adjusted) {
+        int64_t now_millis = ((int64_t)ntp_time.tv_sec * 1000000 + ntp_time.tv_usec) / 1000;
+        ntp_time_delta = (now_millis - prev_millis);
+
+        if (ntp_last_adjustment == 0) {
             first_boot_time += ntp_time_delta;
-            first_boot_time_adjusted = true;
+        } else {
+            // The 0.5 is to reduce overshoot, it can be adjusted or removed if needed.
+            time_correction += (double)ntp_time_delta / (now_millis - ntp_last_adjustment) * 0.5;
         }
+
+        ntp_last_adjustment = now_millis;
 
         ESP_LOGI("NTP", "Received Time: %.24s, we were %lldms %s",
             ctime(&ntp_time.tv_sec), abs(ntp_time_delta), ntp_time_delta < 0 ? "ahead" : "behind");
