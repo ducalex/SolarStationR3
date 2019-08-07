@@ -166,8 +166,8 @@ static void loadConfiguration()
     CFG_LOAD_STR("http.update.password", DEFAULT_HTTP_UPDATE_PASSWORD);
     CFG_LOAD_STR("http.update.database", DEFAULT_HTTP_UPDATE_DATABASE);
     CFG_LOAD_INT("http.update.interval", DEFAULT_HTTP_UPDATE_INTERVAL);
-    CFG_LOAD_INT("http.ota.enabled", 1);
     CFG_LOAD_INT("http.timeout", DEFAULT_HTTP_TIMEOUT);
+    CFG_LOAD_INT("http.ota.enabled", 1);
     CFG_LOAD_DBL("power.power_save_strategy", DEFAULT_POWER_POWER_SAVE_STRATEGY);
     CFG_LOAD_DBL("power.poll_low_vbat_treshold", DEFAULT_POWER_POLL_LOW_VBAT_TRESHOLD);
     CFG_LOAD_DBL("power.http_low_vbat_treshold", DEFAULT_POWER_HTTP_LOW_VBAT_TRESHOLD);
@@ -438,7 +438,9 @@ static void httpPushData()
             );
 
             for (int j = 0; j < SENSORS_COUNT; j++) {
-                sprintf(buffer + strlen(buffer), ",%s=%.4f", SENSORS[j].key, item->sensors_data[j]);
+                if ((item->sensors_status & (1 << j)) == 0) {
+                    sprintf(buffer + strlen(buffer), ",%s=%.4f", SENSORS[j].key, item->sensors_data[j]);
+                }
             }
 
             sprintf(buffer + strlen(buffer), " %llu\n", first_boot_time + item->uptime);
@@ -481,7 +483,11 @@ static void httpPushData()
             cJSON_AddNumberToObject(entry, "offset", uptime() - item->uptime);
             cJSON_AddNumberToObject(entry, "status", item->sensors_status);
             for (int i = 0; i < SENSORS_COUNT; i++) {
-                cJSON_AddNumberToObject(entry, SENSORS[i].key, F2D(item->sensors_data[i]));
+                if ((item->sensors_status & (1 << i)) == 0) {
+                    cJSON_AddNumberToObject(entry, SENSORS[i].key, F2D(item->sensors_data[i]));
+                } else {
+                    cJSON_AddNullToObject(entry, SENSORS[i].key); // Or maybe send nothing at all?
+                }
             }
             cJSON_AddItemToArray(data, entry);
         }

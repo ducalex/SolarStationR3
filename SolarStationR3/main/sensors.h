@@ -3,7 +3,7 @@
 #include "BMP180.h"
 #include "DHT.h"
 
-#define SENSOR(key, unit, desc, avgr) {key, unit, desc, 0, avgr, 0, 0.00, 0.00, 0.00, 0.00}
+#define SENSOR(key, unit, desc, avgr) {key, unit, desc, 1, avgr, 0, 0.00, 0.00, 0.00, 0.00}
 typedef struct {
     char key[8];      // Sensor key used when serializing
     char unit[4];     //
@@ -18,6 +18,7 @@ typedef struct {
 } SENSOR_t;
 
 #define SENSOR_OK 0
+#define SENSOR_PENDING 1
 #define SENSOR_ERR_UNKNOWN -1
 #define SENSOR_ERR_TIMEOUT -2
 
@@ -75,6 +76,8 @@ static void setSensorError(const char *key, short status = SENSOR_ERR_UNKNOWN)
 
 void pollSensors()
 {
+    Adafruit_BME280 bme280;
+    Adafruit_ADS1115 ads;
     float t = 0, h = 0, p = 0;
 
     if (dht_read(DHT_TYPE, DHT_PIN, &t, &h)) {
@@ -96,11 +99,9 @@ void pollSensors()
         setSensorError("p1", SENSOR_ERR_UNKNOWN);
         ESP_LOGE(__func__, "BMP180 sensor not responding");
     }
-/*
-    Adafruit_BME280 bme280;
+
     if (bme280.begin()) {
-        //setSensorValue("t2", t = bme280.readTemperature());
-        t = bme280.readTemperature();
+        setSensorValue("t2", t = bme280.readTemperature());
         setSensorValue("h2", h = bme280.readHumidity());
         setSensorValue("p2", p = bme280.readPressure() / 1000);
         ESP_LOGI(__func__, "BME: %.2f %.2f %.2f", t, h, p);
@@ -110,8 +111,7 @@ void pollSensors()
         setSensorError("p2", SENSOR_ERR_UNKNOWN);
         ESP_LOGE(__func__, "BME280 sensor not responding");
     }
- */
-    Adafruit_ADS1115 ads;
+
     if (ads.begin()) {
         ads.setGain(GAIN_ONE); // real range is vdd + 0.3
 
@@ -150,8 +150,12 @@ void displaySensors()
 
     for (int i = 0; i < SENSORS_COUNT; i++) {
         for (int d = 0; d < 6; d++) { // That's a very lazy way to do it :S
-            sprintf(buffer1, "%%.%df%%s", d);
-            sprintf(buffer2, buffer1, SENSORS[i].val, SENSORS[i].unit);
+            if (SENSORS[i].status == 0) {
+                sprintf(buffer1, "%%.%df%%s", d);
+                sprintf(buffer2, buffer1, SENSORS[i].val, SENSORS[i].unit);
+            } else {
+                strcpy(buffer2, "ERR");
+            }
             sprintf(buffer1, "$%s.%d", SENSORS[i].key, d);
             content.replace(buffer1, buffer2);
         }
