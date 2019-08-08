@@ -327,6 +327,7 @@ static void startConfigurationServer(bool force_ap = false)
         if (server.method() == HTTP_POST) {
             if (config.loadJSON(server.arg("config").c_str())) {
                 saveConfiguration(true);
+                loadConfiguration();
                 body += "<h2>Configuration saved!</h2>";
             } else {
                 body += "<h2>Invalid JSON!</h2>";
@@ -337,6 +338,8 @@ static void startConfigurationServer(bool force_ap = false)
         body += "<form action='/upload' method='post' enctype='multipart/form-data'><label>Update firmware:</label>";
         body += "<input type='file' name='file' style='max-width:50%'><input type='submit' value='Update'></form>";
         body.replace("\t", " ");
+
+        pollSensors();
 
         body += "<div><hr>Sensors:<table>";
         for (int i = 0; i < SENSORS_COUNT; i++) {
