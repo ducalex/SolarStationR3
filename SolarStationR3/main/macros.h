@@ -22,3 +22,5 @@
 #define F2D(n) ((double)((long)((n) * 100000)) / 100000)
 // Signed integer to double
 #define I2D(n) ((double)(long)(n))
+
+#define ARRAY_FILL(array, start, count, value) {for (int __i = 0; __i < (count); __i++) array[(start) + __i] = (value);}
