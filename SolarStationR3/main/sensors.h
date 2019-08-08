@@ -124,9 +124,9 @@ void pollSensors()
         adc3 = (int16_t)ads.readADC_SingleEnded(3) * vbit;
         delay(50); // There seem to be some issue with the ADC, as maxounette foresaw
 
-        setSensorValue("bat", adc0 * CFG_DBL("POWER.VBAT_MULTIPLIER"));
-        setSensorValue("sol", adc1);
-        setSensorValue("l1", adc2);
+        setSensorValue("bat", adc0 * CFG_DBL("sensors.adc.adc0_multiplier"));
+        setSensorValue("sol", adc1 * CFG_DBL("sensors.adc.adc1_multiplier"));
+        setSensorValue("l1",  adc2 * CFG_DBL("sensors.adc.adc2_multiplier"));
         ESP_LOGI(__func__, "ADC: %.2f %.2f %.2f %.2f", adc0, adc1, adc2, adc3);
     } else {
         setSensorError("bat", SENSOR_ERR_UNKNOWN);

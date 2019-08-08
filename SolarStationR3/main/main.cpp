@@ -37,9 +37,7 @@ RTC_DATA_ATTR static double  time_correction = 0;
 RTC_DATA_ATTR static message_t message_queue[MESSAGE_QUEUE_SIZE];
 RTC_DATA_ATTR static int16_t message_queue_pos = 0;
 RTC_DATA_ATTR static bool use_sdcard = true;
-static int32_t STATION_POLL_INTERVAL = DEFAULT_STATION_POLL_INTERVAL;
-static int32_t HTTP_UPDATE_INTERVAL = DEFAULT_HTTP_UPDATE_INTERVAL;
-
+static bool is_interactive_wakeup = true;
 ConfigProvider config;
 
 extern const esp_app_desc_t esp_app_desc;
@@ -168,10 +166,12 @@ static void loadConfiguration()
     CFG_LOAD_INT("http.update.interval", DEFAULT_HTTP_UPDATE_INTERVAL);
     CFG_LOAD_INT("http.timeout", DEFAULT_HTTP_TIMEOUT);
     CFG_LOAD_INT("http.ota.enabled", 1);
-    CFG_LOAD_DBL("power.power_save_strategy", DEFAULT_POWER_POWER_SAVE_STRATEGY);
-    CFG_LOAD_DBL("power.poll_low_vbat_treshold", DEFAULT_POWER_POLL_LOW_VBAT_TRESHOLD);
-    CFG_LOAD_DBL("power.http_low_vbat_treshold", DEFAULT_POWER_HTTP_LOW_VBAT_TRESHOLD);
-    CFG_LOAD_DBL("power.vbat_multiplier", DEFAULT_POWER_VBAT_MULTIPLIER);
+    CFG_LOAD_DBL("powersave.strategy", DEFAULT_POWER_SAVE_STRATEGY);
+    CFG_LOAD_DBL("powersave.treshold", DEFAULT_POWER_SAVE_TRESHOLD);
+    CFG_LOAD_DBL("sensors.adc.adc0_multiplier", DEFAULT_SENSORS_ADC_MULTIPLIER);
+    CFG_LOAD_DBL("sensors.adc.adc1_multiplier", DEFAULT_SENSORS_ADC_MULTIPLIER);
+    CFG_LOAD_DBL("sensors.adc.adc2_multiplier", DEFAULT_SENSORS_ADC_MULTIPLIER);
+    CFG_LOAD_DBL("sensors.adc.adc3_multiplier", DEFAULT_SENSORS_ADC_MULTIPLIER);
     CFG_LOAD_DBL("sensors.anemometer.radius", DEFAULT_SENSORS_ANEMOMETER_RADIUS);
     CFG_LOAD_DBL("sensors.anemometer.calibration", DEFAULT_SENSORS_ANEMOMETER_CALIBRATION);
 
@@ -193,14 +193,14 @@ static void hibernate()
 
     // Sleep
     // To do: account for ESP32 boot time before millis timer is started (100+ ms)
-    int sleep_time = (STATION_POLL_INTERVAL * 1000) - millis();
+    int sleep_time = (CFG_INT("STATION.POLL_INTERVAL") * 1000) - millis();
 
     if (sleep_time < 0) {
         ESP_LOGW(__func__, "Bogus sleep time, did we spend too much time processing?");
         sleep_time = 10 * 1000; // We could continue to loop() instead but I fear memory leaks
     }
 
-    if (time_correction != 0.00) {
+    if (!is_interactive_wakeup && time_correction != 0.00) {
         int correction = round(time_correction * sleep_time);
         ESP_LOGI(__func__, "Time correction: Sleep: %dms Clock: %dms", -correction, correction);
         sleep_time += -correction;
@@ -545,7 +545,12 @@ static void httpPushData()
 
     esp_http_client_cleanup(client);
 
-    next_http_update = boot_time() + (HTTP_UPDATE_INTERVAL * 1000);
+    int interval = POWER_SAVE_INTERVAL(CFG_INT("HTTP.UPDATE.INTERVAL"), CFG_DBL("POWERSAVE.TRESHOLD"), getSensor("bat")->avg);
+    if (interval < CFG_INT("HTTP.UPDATE.INTERVAL")) {
+        ESP_LOGW(__func__, "Power saving enabled, HTTP update interval increased to %ds", interval);
+    }
+
+    next_http_update = boot_time() + (interval * 1000);
 }
 
 
@@ -616,6 +621,9 @@ void setup()
         ulp_wind_start();
     }
 
+    // This will determine how long the display is kept on and how we handle certain events
+    is_interactive_wakeup = (wake_count == 1 || esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0);
+
     // Power up our peripherals
     pinMode(PERIPH_POWER_PIN, OUTPUT);
     digitalWrite(PERIPH_POWER_PIN, PERIPH_POWER_PIN_LEVEL);
@@ -624,7 +632,7 @@ void setup()
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     Display.begin();
 
-    if (use_sdcard) {
+    if (use_sdcard || is_interactive_wakeup) {
         if ((use_sdcard = SD.begin())) {
             ESP_LOGI(__func__, "SD Card successfully mounted.");
             if (SD.exists("firmware.bin")) {
@@ -665,7 +673,6 @@ void loop()
     }
     else if (!http_available) {
         ESP_LOGI(__func__, "Polling sensors");
-        // Display.printf("\nPolling sensors!");
     }
     else {
         ESP_LOGI(__func__, "WiFi: Connecting to: '%s'...", wifi_ssid);
@@ -690,18 +697,6 @@ void loop()
         item->sensors_status |= ((SENSORS[i].status ? 1 : 0) << i);
     }
     message_queue_pos = (message_queue_pos + 1) % MESSAGE_QUEUE_SIZE;
-
-
-    // Adjust our intervals based on the battery we've just read
-    float vbat = getSensor("bat")->avg; // We use avg so it doesn't bounce around too much
-    STATION_POLL_INTERVAL = POWER_SAVE_INTERVAL(
-        CFG_INT("STATION.POLL_INTERVAL"), CFG_DBL("POWER.POLL_LOW_VBAT_TRESHOLD"), vbat);
-    HTTP_UPDATE_INTERVAL = POWER_SAVE_INTERVAL(
-        CFG_INT("HTTP.UPDATE.INTERVAL"), CFG_DBL("POWER.HTTP_LOW_VBAT_TRESHOLD"), vbat);
-
-    ESP_LOGI(__func__, "Effective intervals: poll: %d (%d), http: %d (%d), vbat: %.2f",
-        STATION_POLL_INTERVAL, CFG_INT("STATION.POLL_INTERVAL"),
-        HTTP_UPDATE_INTERVAL, CFG_INT("HTTP.UPDATE.INTERVAL"), vbat);
 
 
     // Now do the http request!
@@ -733,7 +728,7 @@ void loop()
 
 
     // Keep the screen on for a while
-    int display_timeout = CFG_INT("STATION.DISPLAY_TIMEOUT") * 1000 - millis();
+    int display_timeout = (is_interactive_wakeup ? CFG_INT("STATION.DISPLAY_TIMEOUT") : 1) * 1000 - millis();
 
     if (Display.isPresent() && display_timeout > 50) {
         ESP_LOGI(__func__, "Display will timeout in %dms (entering light-sleep)", display_timeout);
