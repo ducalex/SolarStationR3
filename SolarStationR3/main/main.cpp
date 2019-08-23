@@ -650,7 +650,7 @@ void setup()
 
     ESP_LOGI(__func__, "Station name: '%s', group: '%s'", CFG_STR("STATION.NAME"), CFG_STR("STATION.GROUP"));
     Display.printf("# %s #\n", CFG_STR("STATION.NAME"));
-    Display.printf("SD: %d | Up: %dm\n", use_sdcard ? 1 : 0, uptime() / 60000);
+    Display.printf("SD: %s | Up: %lldm\n", use_sdcard ? "OK" : "ERR", uptime() / 60000);
 
     // Our button can always interrupt light and deep sleep
     esp_sleep_enable_ext0_wakeup((gpio_num_t)ACTION_BUTTON_PIN, LOW);
