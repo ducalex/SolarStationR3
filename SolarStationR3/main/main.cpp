@@ -450,13 +450,14 @@ static void httpPushData()
         }
 
         sprintf(buffer + strlen(buffer),
-            "%s_status,station=%s,version=%s,build=%s ntp_delta=%lld,data_points=%d,power_save=0,uptime=%llu %llu",
+            "%s_status,station=%s,version=%s,build=%s ntp_delta=%lld,data_points=%d,power_save=0,cycles=%d,uptime=%llu %llu",
             CFG_STR("STATION.GROUP"),
             CFG_STR("STATION.NAME"),
             PROJECT_VERSION,
             esp_app_desc.version,
             ntp_time_delta,
             count,
+            wake_count,
             uptime(),
             boot_time()
         );
