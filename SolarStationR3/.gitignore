@@ -1,5 +1,0 @@
-.vscode/*
-build/*
-*.fw
-sdkconfig
-sdkconfig.old
