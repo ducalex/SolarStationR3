@@ -13,12 +13,6 @@
 #define I2C_SCL_PIN 22
 #define OLED_I2C_ADDRESS 0x3C
 
-// SPI
-#define SD_PIN_NUM_MISO 19
-#define SD_PIN_NUM_MOSI 23
-#define SD_PIN_NUM_CLK  18
-#define SD_PIN_NUM_CS 5
-
 // DHT
 #define DHT_PIN 32
 #define DHT_TYPE DHT22   // or DHT11

@@ -3,7 +3,6 @@
 #include "WebServer.h"
 #include "FwUpdater.h"
 #include "ConfigProvider.h"
-#include "SD.h"
 #include "cJSON.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -36,7 +35,6 @@ RTC_DATA_ATTR static int64_t ntp_last_adjustment = 0;
 RTC_DATA_ATTR static double  time_correction = 0;
 RTC_DATA_ATTR static message_t message_queue[MESSAGE_QUEUE_SIZE];
 RTC_DATA_ATTR static int16_t message_queue_pos = 0;
-RTC_DATA_ATTR static bool use_sdcard = true;
 static bool is_interactive_wakeup = true;
 ConfigProvider config;
 
@@ -135,20 +133,9 @@ static bool debounceButton(int gpio, int level, int threshold = 50)
 }
 
 
-static void saveConfiguration(bool update_only)
-{
-    if (SD.cardType() != CARD_NONE) {
-        config.saveFile(CONFIG_USE_FILE, update_only);
-    }
-    config.saveNVS(CONFIG_USE_NVS, update_only);
-}
-
-
 static void loadConfiguration()
 {
-    if (SD.cardType() == CARD_NONE || !config.loadFile(CONFIG_USE_FILE)) {
-        config.loadNVS(CONFIG_USE_NVS);
-    }
+    config.loadNVS(CONFIG_USE_NVS);
 
     CFG_LOAD_STR("station.name", DEFAULT_STATION_NAME);
     CFG_LOAD_STR("station.group", DEFAULT_STATION_GROUP);
@@ -174,8 +161,6 @@ static void loadConfiguration()
     CFG_LOAD_DBL("sensors.adc.adc3_multiplier", DEFAULT_SENSORS_ADC_MULTIPLIER);
     CFG_LOAD_DBL("sensors.anemometer.radius", DEFAULT_SENSORS_ANEMOMETER_RADIUS);
     CFG_LOAD_DBL("sensors.anemometer.calibration", DEFAULT_SENSORS_ANEMOMETER_CALIBRATION);
-
-    saveConfiguration(true);
 }
 
 
@@ -186,7 +171,6 @@ static void hibernate()
 
     // Cleanup
     Display.end();
-    SD.end();
 
     // See how much memory we never freed
     PRINT_MEMORY_STATS();
@@ -260,34 +244,19 @@ static void firmware_upgrade_from_http(const char *url)
 }
 
 
-static void firmware_upgrade_from_file(const char *filePath)
-{
-    ESP_LOGI(__func__, "Flashing firmware from '%s'...", filePath);
-
-    if (firmware_upgrade_begin() && FwUpdater.writeFromFile(filePath) && firmware_upgrade_end()) {
-        String new_name = String(filePath) + "-installed.bin";
-        SD.remove(new_name);
-        SD.rename(filePath, new_name);
-        delay(10 * 1000);
-        esp_restart();
-    }
-}
-
-
 static void startConfigurationServer(bool force_ap = false)
 {
     uint32_t server_timeout = millis() + 15 * 60000;
     IPAddress server_ip = IPAddress(1, 1, 1, 1);
-    char *ssid = CFG_STR("STATION.NAME");
+    char *ssid = CFG_STR("station.name");
 
-    WiFi.softAPdisconnect(true);
-    WiFi.disconnect(true);
-
-    char *cfg_ssid = CFG_STR("WIFI.SSID"), *cfg_password = CFG_STR("WIFI.PASSWORD");
+    char *cfg_ssid = CFG_STR("wifi.ssid"), *cfg_password = CFG_STR("wifi.password");
     if (!force_ap && strlen(cfg_ssid) > 0) {
         ESP_LOGI("AP", "Starting Configuration server on local wifi");
         Display.printf("Connecting...");
 
+        WiFi.softAPdisconnect(true);
+        WiFi.disconnect(true);
         WiFi.begin(cfg_ssid, cfg_password);
         WiFi.setSleep(true);
         WiFi.waitStatusBits(STA_HAS_IP_BIT, 20000);
@@ -303,6 +272,9 @@ static void startConfigurationServer(bool force_ap = false)
 
     if (WiFi.status() != WL_CONNECTED) {
         ESP_LOGI("AP", "Starting Configuration server on access point");
+
+        WiFi.softAPdisconnect(true);
+        WiFi.disconnect(true);
 
         if (WiFi.softAPConfig(server_ip, server_ip, IPAddress(255, 0, 0, 0)) && WiFi.softAP(ssid)) {
             ESP_LOGI("AP", "Access point started. SSID: %s  IP: %s", ssid, server_ip.toString().c_str());
@@ -326,7 +298,7 @@ static void startConfigurationServer(bool force_ap = false)
         String body;
         if (server.method() == HTTP_POST) {
             if (config.loadJSON(server.arg("config").c_str())) {
-                saveConfiguration(true);
+                config.saveNVS(CONFIG_USE_NVS, true);
                 loadConfiguration();
                 body += "<h2>Configuration saved!</h2>";
             } else {
@@ -392,6 +364,7 @@ static void startConfigurationServer(bool force_ap = false)
         if (debounceButton(ACTION_BUTTON_PIN, LOW, 250)) {
             server.stop();
             startConfigurationServer(!force_ap);
+            return;
         }
     }
 }
@@ -415,17 +388,17 @@ static void httpPullData()
 
 static void httpPushData()
 {
-    String url = CFG_STR("HTTP.UPDATE.URL");
+    String url = CFG_STR("http.update.url");
     char content_type[40] = "text/plain";
     char buffer[2048] = "";
     int count = 0;
 
-    if (strcasecmp(CFG_STR("HTTP.UPDATE.TYPE"), "InfluxDB") == 0)
+    if (strcasecmp(CFG_STR("http.update.type"), "InfluxDB") == 0)
     {
         strcpy(content_type, "application/binary");
 
         if (url.endsWith("/")) { url.remove(url.length() - 1); }
-        url += "/write?db=" + String(CFG_STR("HTTP.UPDATE.DATABASE")) + "&precision=ms";
+        url += "/write?db=" + String(CFG_STR("http.update.database")) + "&precision=ms";
 
         for (int i = 0; i < MESSAGE_QUEUE_SIZE; i++) {
             message_t *item = &message_queue[i];
@@ -508,17 +481,11 @@ static void httpPushData()
 
     http_config.url        = url.c_str();
     http_config.method     = HTTP_METHOD_POST;
-    http_config.timeout_ms = CFG_INT("HTTP.TIMEOUT") * 1000;
-    if (strlen(CFG_STR("HTTP.UPDATE.USERNAME")) > 0) {
-        http_config.username   = CFG_STR("HTTP.UPDATE.USERNAME");
-        http_config.password   = CFG_STR("HTTP.UPDATE.PASSWORD");
+    http_config.timeout_ms = CFG_INT("http.timeout") * 1000;
+    if (strlen(CFG_STR("http.update.username")) > 0) {
+        http_config.username   = CFG_STR("http.update.username");
+        http_config.password   = CFG_STR("http.update.password");
         http_config.auth_type  = HTTP_AUTH_TYPE_BASIC;
-    }
-
-    // Auth Workaround waiting for https://github.com/espressif/esp-idf/issues/3843
-    if (http_config.username && http_config.password) {
-        url.replace("://", String("://") + http_config.username + ":" + http_config.password + "@");
-        http_config.url = url.c_str();
     }
 
     esp_http_client_handle_t client = esp_http_client_init(&http_config);
@@ -549,8 +516,8 @@ static void httpPushData()
 
     esp_http_client_cleanup(client);
 
-    int interval = POWER_SAVE_INTERVAL(CFG_INT("HTTP.UPDATE.INTERVAL"), CFG_DBL("POWERSAVE.TRESHOLD"), getSensor("bat")->avg);
-    if (interval < CFG_INT("HTTP.UPDATE.INTERVAL")) {
+    int interval = POWER_SAVE_INTERVAL(CFG_INT("http.update.interval"), CFG_DBL("powersave.threshold"), getSensor("bat")->avg);
+    if (interval < CFG_INT("http.update.interval")) {
         ESP_LOGW(__func__, "Power saving enabled, HTTP update interval increased to %ds", interval);
     }
 
@@ -636,22 +603,11 @@ void setup()
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     Display.begin();
 
-    if (use_sdcard || is_interactive_wakeup) {
-        if ((use_sdcard = SD.begin())) {
-            ESP_LOGI(__func__, "SD Card successfully mounted.");
-            if (SD.exists("firmware.bin")) {
-                firmware_upgrade_from_file("firmware.bin");
-            }
-        } else {
-            ESP_LOGW(__func__, "Failed to mount SD Card.");
-        }
-    }
-
     loadConfiguration();
 
     ESP_LOGI(__func__, "Station name: '%s', group: '%s'", CFG_STR("STATION.NAME"), CFG_STR("STATION.GROUP"));
     Display.printf("# %s #\n", CFG_STR("STATION.NAME"));
-    Display.printf("SD: %s | Up: %lldm\n", use_sdcard ? "OK" : "ERR", uptime() / 60000);
+    Display.printf("# Up: %lld minutes #\n", uptime() / 60000);
 
     // Our button can always interrupt light and deep sleep
     esp_sleep_enable_ext0_wakeup((gpio_num_t)ACTION_BUTTON_PIN, LOW);
@@ -665,11 +621,11 @@ void setup()
 
 void loop()
 {
-    const char *wifi_ssid = CFG_STR("WIFI.SSID"), *wifi_password = CFG_STR("WIFI.PASSWORD");
-    const int  wifi_timeout_ms = CFG_INT("WIFI.TIMEOUT") * 1000;
+    const char *wifi_ssid = CFG_STR("wifi.ssid"), *wifi_password = CFG_STR("wifi.password");
+    const int  wifi_timeout_ms = CFG_INT("wifi.timeout") * 1000;
 
     const bool wifi_available = strlen(wifi_ssid) > 0;
-    const bool http_available = strlen(CFG_STR("HTTP.UPDATE.URL")) > 0 && rtc_millis() >= (next_http_update - 5000);
+    const bool http_available = strlen(CFG_STR("http.update.url")) > 0 && rtc_millis() >= (next_http_update - 5000);
 
     if (!wifi_available) {
         ESP_LOGI(__func__, "WiFi: No configuration");

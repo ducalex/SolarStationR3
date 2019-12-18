@@ -186,5 +186,5 @@ void displaySensors()
         }
     }
 
-    Display.printf("\n%s", content.c_str());
+    Display.printf("%s", content.c_str());
 }
