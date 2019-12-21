@@ -38,6 +38,7 @@ typedef enum {
 } SENSOR_TYPE_t;
 
 RTC_DATA_ATTR SENSOR_t SENSORS[] = {
+    //     ID,     Unit,   Name,       AVGr, Sensor Type|Channel
     SENSOR("bat",  "V",    "Battery",     5, SENSOR_ADS|0),
     SENSOR("sol",  "V",    "Solar",      10, SENSOR_ADS|1),
     SENSOR("l1",   "raw",  "Light 1",    10, SENSOR_ADS|2),

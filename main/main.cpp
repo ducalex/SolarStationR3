@@ -1,24 +1,36 @@
 #include "Arduino.h"
-#include "WiFi.h"
-#include "WebServer.h"
 #include "FwUpdater.h"
 #include "ConfigProvider.h"
 #include "cJSON.h"
-#include "esp_log.h"
-#include "esp_ota_ops.h"
-#include "esp_system.h"
-#include "esp_http_client.h"
-#include "driver/rtc_io.h"
-#include "esp32/ulp.h"
 #include "sys/time.h"
 #include "sys/socket.h"
-#include "netinet/in.h"
+#include "sys/param.h"
 #include "netdb.h"
+#include "driver/rtc_io.h"
+#include "esp32/ulp.h"
+#include "esp_http_client.h"
+#include "esp_http_server.h"
+#include "esp_wifi.h"
+#include "esp_event_loop.h"
+#include "esp_event_legacy.h"
+#include "esp_ota_ops.h"
+#include "esp_system.h"
+#include "esp_log.h"
 
 #include "config.h"
 #include "macros.h"
 #include "display.h"
 #include "sensors.h"
+
+enum { WL_UNKNOWN = 0, WL_IDLE, WL_CONNECTING, WL_CONNECTED, WL_DISCONNECTED };
+
+static struct {
+    char ssid[32];
+    char ipv4[32], ipv6[64];
+    long mode = 0;
+    long status = WL_UNKNOWN;
+    httpd_handle_t httpd = NULL;
+} network;
 
 typedef struct {
     int64_t  uptime; // Uptime can work before NTP lock, timestamp cannot
@@ -99,6 +111,39 @@ float ulp_wind_read_kph()
 }
 
 
+static void stopConfigurationServer();
+
+
+static void wifi_stop()
+{
+    stopConfigurationServer();
+    esp_wifi_disconnect();
+//    esp_wifi_stop();
+    network.status = WL_UNKNOWN;
+    *network.ssid = 0;
+}
+
+
+static void wifi_init(wifi_mode_t mode, const char *wifi_ssid, const char *wifi_password, const char *ip)
+{
+    wifi_stop();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    wifi_config_t wifi_config = {};
+
+    strncpy((char*)network.ssid, wifi_ssid, 32);
+    network.mode = mode;
+    network.status = WL_CONNECTING;
+    strncpy((char*)wifi_config.sta.ssid, wifi_ssid, 32);
+    strncpy((char*)wifi_config.sta.password, wifi_password, 64);
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+    ESP_ERROR_CHECK(esp_wifi_set_mode(mode));
+    ESP_ERROR_CHECK(esp_wifi_set_config((mode == WIFI_MODE_STA) ? ESP_IF_WIFI_STA : ESP_IF_WIFI_AP, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+}
+
+
 int64_t rtc_millis()
 {
     struct timeval curTime;
@@ -161,11 +206,16 @@ static void loadConfiguration()
     CFG_LOAD_DBL("sensors.adc.adc3_multiplier", DEFAULT_SENSORS_ADC_MULTIPLIER);
     CFG_LOAD_DBL("sensors.anemometer.radius", DEFAULT_SENSORS_ANEMOMETER_RADIUS);
     CFG_LOAD_DBL("sensors.anemometer.calibration", DEFAULT_SENSORS_ANEMOMETER_CALIBRATION);
+
+    ESP_LOGI(__func__, "Station name: '%s', group: '%s'", CFG_STR("STATION.NAME"), CFG_STR("STATION.GROUP"));
 }
 
 
 static void hibernate()
 {
+    // Stop WiFi
+    wifi_stop();
+
     // If we reach this point it means the updated app works.
     FwUpdater.markAppValid();
 
@@ -244,182 +294,220 @@ static void firmware_upgrade_from_http(const char *url)
 }
 
 
+static void urldecode(char *input)
+{
+    char *leader = input, *follower = leader;
+
+    while (*leader) {
+        if (*leader == '%') {
+            leader++;
+            char high = *leader;
+            leader++;
+            char low = *leader;
+            if (high > 0x39) high -= 7;
+            high &= 0x0f;
+            if (low > 0x39) low -= 7;
+            low &= 0x0f;
+            *follower = (high << 4) | low;
+        } else if (*leader == '+') {
+            *follower = ' ';
+        } else {
+            *follower = *leader;
+        }
+        leader++;
+        follower++;
+    }
+    *follower = 0;
+}
+
+
+static void stopConfigurationServer()
+{
+    if (network.httpd != NULL) {
+        httpd_stop(network.httpd);
+        network.httpd = NULL;
+    }
+}
+
+
 static void startConfigurationServer(bool force_ap = false)
 {
-    uint32_t server_timeout = millis() + 15 * 60000;
-    IPAddress server_ip = IPAddress(1, 1, 1, 1);
-    char *ssid = CFG_STR("station.name");
+    stopConfigurationServer();
 
-    char *cfg_ssid = CFG_STR("wifi.ssid"), *cfg_password = CFG_STR("wifi.password");
-    if (!force_ap && strlen(cfg_ssid) > 0) {
+    if (network.status != WL_CONNECTED && !force_ap && strlen(CFG_STR("wifi.ssid")) > 0) {
         ESP_LOGI("AP", "Starting Configuration server on local wifi");
         Display.printf("Connecting...");
+        wifi_init(WIFI_MODE_STA, CFG_STR("wifi.ssid"), CFG_STR("wifi.password"), NULL);
 
-        WiFi.softAPdisconnect(true);
-        WiFi.disconnect(true);
-        WiFi.begin(cfg_ssid, cfg_password);
-        WiFi.setSleep(true);
-        WiFi.waitStatusBits(STA_HAS_IP_BIT, 20000);
+        int timeout = millis() + (CFG_INT("wifi.timeout") * 1000);
+        while (network.status != WL_CONNECTED && millis() < timeout) {
+            Display.printf(".");
+            delay(250);
+        }
 
-        if (WiFi.status() == WL_CONNECTED) {
-            ssid = cfg_ssid;
-            server_ip = WiFi.localIP();
-            ESP_LOGI("AP", "Wifi connected. SSID: %s  IP: %s", cfg_ssid, server_ip.toString().c_str());
+        if (network.status == WL_CONNECTED) {
+            ESP_LOGI("AP", "Wifi connected. SSID: %s  IP: %s", network.ssid, network.ipv4);
         } else {
-            ESP_LOGW("AP", "Unable to connect to '%s'", cfg_ssid);
+            ESP_LOGW("AP", "Unable to connect to '%s'", network.ssid);
         }
     }
 
-    if (WiFi.status() != WL_CONNECTED) {
+    if (network.status != WL_CONNECTED || force_ap) {
         ESP_LOGI("AP", "Starting Configuration server on access point");
-
-        WiFi.softAPdisconnect(true);
-        WiFi.disconnect(true);
-
-        if (WiFi.softAPConfig(server_ip, server_ip, IPAddress(255, 0, 0, 0)) && WiFi.softAP(ssid)) {
-            ESP_LOGI("AP", "Access point started. SSID: %s  IP: %s", ssid, server_ip.toString().c_str());
-        } else {
-            ESP_LOGE("AP", "Unable to start the access point");
-            return;
-        }
+        Display.printf("Starting Access Point...");
+        wifi_init(WIFI_MODE_AP, CFG_STR("station.name"), "", NULL);
+        delay(500);
+        ESP_LOGI("AP", "Access point started. SSID: %s  IP: %s", network.ssid, network.ipv4);
     }
 
-    WebServer server(80);
-    ESP_LOGI("AP", "Server listening at http://%s:80", server_ip.toString().c_str());
+    Display.clear();
+    Display.printf("Configuration Server:\n\n");
+    Display.printf("Mode: %s\n", (network.mode == WIFI_MODE_STA) ? "Local Client" : "Access point");
 
-    auto server_respond = [&](int code, String body) {
-        server.send(code, "text/html",
-                "<html><head><meta name=viewport content='width=device-width,initial-scale=0'>"
-                "<style>label,input,a{font-size:2em;margin:0 5px}textarea{width:100%; height:75%}body"
-                "{font-family:sans-serif;}</style></head><body><h1>" + String(CFG_STR("STATION.NAME"))
-                + "</h1>" + body + "</body></html>");
-    };
-    server.on("/", [&]() {
-        String body;
-        if (server.method() == HTTP_POST) {
-            if (config.loadJSON(server.arg("config").c_str())) {
+    #define HTTP_RESPONSE(req, body) \
+        String resp_str = String("<html><head><meta name=viewport content='width=device-width,initial-scale=0'><style>" \
+            "body{font-family:sans-serif}label,input,a{font-size:2em;margin:0 5px}textarea{tab-size:2;;width:100%; height:75vh}" \
+            "</style></head><body><h1>") + String(CFG_STR("STATION.NAME")) + "</h1>" + String(body) + "</body></html>"; \
+        httpd_resp_sendstr(req, resp_str.c_str());
+
+    auto home_handler = [](httpd_req_t *req) {
+        String body = "";
+
+        if (req->method == HTTP_POST) {
+            char* http_buffer = (char*)calloc(2048, 1);
+            char* cfg_buffer = (char*)calloc(2048, 1);
+            httpd_req_recv(req, http_buffer, MIN(req->content_len, 2048));
+            httpd_query_key_value(http_buffer, "config", cfg_buffer, 2048);
+            urldecode(cfg_buffer);
+
+            if (config.loadJSON(cfg_buffer)) {
                 config.saveNVS(CONFIG_USE_NVS, true);
                 loadConfiguration();
                 body += "<h2>Configuration saved!</h2>";
             } else {
                 body += "<h2>Invalid JSON!</h2>";
             }
+            free(http_buffer);
+            free(cfg_buffer);
         }
+
         body += "<form method='post'><textarea name='config'>" + String(config.saveJSON()) + "</textarea>";
         body += "</textarea><p><input type='submit' value='Save'> <a href='/restart'>Restart</a></p></form><hr>";
-        body += "<form action='/upload' method='post' enctype='multipart/form-data'><label>Update firmware:</label>";
+        body += "<form action='/upgrade' method='post' enctype='multipart/form-data'><label>Update firmware:</label>";
         body += "<input type='file' name='file' style='max-width:50%'><input type='submit' value='Update'></form>";
-        body.replace("\t", " ");
 
-        pollSensors();
+        HTTP_RESPONSE(req, body);
+        return ESP_OK;
+    };
 
-        body += "<div><hr>Sensors:<table>";
-        for (int i = 0; i < SENSORS_COUNT; i++) {
-            body += "<tr>";
-            body += "<td>" + String(SENSORS[i].key) + "</td>";
-            body += "<td>" + String(SENSORS[i].desc) + "</td>";
-            body += "<td>" + String(SENSORS[i].val) + "</td>";
-            body += "<td>" + String(SENSORS[i].unit) + "</td>";
-            body += "</tr>";
+    auto upgrade_handler = [](httpd_req_t *req) {
+        char* fw_buffer = (char*)malloc(4096);
+        int remaining = req->content_len;
+
+        ESP_LOGI("HTTP", "=========== RECEIVED DATA ==========");
+        // firmware_upgrade_begin();
+
+        while (remaining > 0) {
+            int ret = httpd_req_recv(req, fw_buffer, MIN(remaining, 4096));
+            if (ret <= 0) {
+                return ESP_FAIL;
+            }
+            remaining -= ret;
+
+            // if (!FwUpdater.write(upload.buf, upload.currentSize)) {
+            //     ESP_LOGE("Upload", "Firmware update: Write error (%d bytes)", upload.currentSize);
+            // }
         }
-        body += "</table></div>";
 
-        server_respond(200, body);
-    });
-    server.on("/restart", [&] {
-        server_respond(200, "Goodbye!");
-        delay(1000);
+        ESP_LOGI("HTTP", "====================================");
+        // firmware_upgrade_end();
+        free(fw_buffer);
+
+        HTTP_RESPONSE(req, "<h1>Firmware upgrade successful!</h1>");
+        return ESP_OK;
+    };
+
+    auto restart_handler = [](httpd_req_t *req) {
+        HTTP_RESPONSE(req, "Goodbye!");
+        delay(500);
         esp_restart();
-    });
-    server.on("/upload", HTTP_POST, [&] {
-        server_respond(200, String("Status: <p>") + FwUpdater.getErrorStr() + "</p><a href='/restart'>Restart</a>");
-    }, [&server]() {
-        HTTPUpload& upload = server.upload();
-        if (upload.status == UPLOAD_FILE_START) {
-            firmware_upgrade_begin();
+        return ESP_OK;
+    };
+
+    httpd_uri_t handlers[] = {
+        {"/", HTTP_GET, home_handler, NULL},
+        {"/", HTTP_POST, home_handler, NULL},
+        {"/sensors", HTTP_GET, home_handler, NULL},
+        {"/upgrade", HTTP_POST, upgrade_handler, NULL},
+        {"/restart", HTTP_GET, restart_handler, NULL},
+    };
+
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    if (httpd_start(&network.httpd, &config) == ESP_OK) {
+        for (int i = 0; i < (sizeof(handlers) / sizeof(httpd_uri_t)); i++) {
+            httpd_register_uri_handler(network.httpd, &handlers[i]);
         }
-        else if (upload.status == UPLOAD_FILE_WRITE) {
-            if (!FwUpdater.write(upload.buf, upload.currentSize)) {
-                ESP_LOGE("Upload", "Firmware update: Write error (%d bytes)", upload.currentSize);
+        ESP_LOGI("SERVER", "Started server on port: '%d'", config.server_port);
+        Display.printf("SSID: %s\n\n", network.ssid);
+        Display.printf("http://%s\n\n", network.ipv4);
+        Display.printf("(Press to toggle)");
+    } else {
+        Display.printf("Error starting server!");
+        ESP_LOGI("SERVER", "Error starting server!");
+        exit(-1);
+    }
+}
+
+
+static bool checkActionButton()
+{
+    bool force_ap = false;
+    if (debounceButton(ACTION_BUTTON_PIN, LOW, 2500)) {
+        long server_timeout = millis() + 15 * 60000;
+        startConfigurationServer(force_ap);
+        debounceButton(ACTION_BUTTON_PIN, LOW, 10000);
+        while (server_timeout > millis()) {
+            if (debounceButton(ACTION_BUTTON_PIN, LOW, 250)) {
+                startConfigurationServer(force_ap = !force_ap);
             }
         }
-        else if (upload.status == UPLOAD_FILE_END) {
-            firmware_upgrade_end();
-        }
-    });
-    server.begin();
-
-    Display.clear();
-    Display.printf("Configuration Server:\n\n");
-    Display.printf("SSID: %s\n\n", ssid);
-    Display.printf("http://%s\n\n", server_ip.toString().c_str());
-    Display.printf("Mode: %s\n", WiFi.getMode() == WIFI_MODE_STA ? "Local Client" : "Access point");
-    Display.printf("(Press to toggle)");
-
-    // Just in case the user is still holding the button
-    debounceButton(ACTION_BUTTON_PIN, LOW, 10000);
-
-    while (millis() < server_timeout || server.client().connected()) {
-        server.handleClient();
-        if (debounceButton(ACTION_BUTTON_PIN, LOW, 250)) {
-            server.stop();
-            startConfigurationServer(!force_ap);
-            return;
-        }
-    }
-}
-
-
-static void checkActionButton()
-{
-    if (debounceButton(ACTION_BUTTON_PIN, LOW, 2500)) {
-        startConfigurationServer();
         esp_restart();
     }
-}
-
-
-static void httpPullData()
-{
-    // Here we will do an HTTP request to see if messages were left for us.
-    // Config and firmware updates for example, or reboot/startconfigserver
+    return false;
 }
 
 
 static void httpPushData()
 {
-    String url = CFG_STR("http.update.url");
-    char content_type[40] = "text/plain";
+    char url[512] = "";
+    char content_type[40] = "application/binary";
     char buffer[2048] = "";
     int count = 0;
 
     if (strcasecmp(CFG_STR("http.update.type"), "InfluxDB") == 0)
     {
-        strcpy(content_type, "application/binary");
-
-        if (url.endsWith("/")) { url.remove(url.length() - 1); }
-        url += "/write?db=" + String(CFG_STR("http.update.database")) + "&precision=ms";
+        sprintf(url, "%s/write?db=%s&precision=ms", CFG_STR("http.update.url"), CFG_STR("http.update.database"));
 
         for (int i = 0; i < MESSAGE_QUEUE_SIZE; i++) {
             message_t *item = &message_queue[i];
 
-            if (item->uptime == 0) continue; // Empty entry
-            count++;
+            if (item->uptime > 0) {
+                sprintf(buffer + strlen(buffer),
+                    "%s_sensors,station=%s status=%u",
+                    CFG_STR("STATION.GROUP"),
+                    CFG_STR("STATION.NAME"),
+                    item->sensors_status
+                );
 
-            sprintf(buffer + strlen(buffer),
-                "%s_sensors,station=%s status=%u",
-                CFG_STR("STATION.GROUP"),
-                CFG_STR("STATION.NAME"),
-                item->sensors_status
-            );
-
-            for (int j = 0; j < SENSORS_COUNT; j++) {
-                if ((item->sensors_status & (1 << j)) == 0) {
-                    sprintf(buffer + strlen(buffer), ",%s=%.4f", SENSORS[j].key, item->sensors_data[j]);
+                for (int j = 0; j < SENSORS_COUNT; j++) {
+                    if ((item->sensors_status & (1 << j)) == 0) {
+                        sprintf(buffer + strlen(buffer), ",%s=%.4f", SENSORS[j].key, item->sensors_data[j]);
+                    }
                 }
-            }
 
-            sprintf(buffer + strlen(buffer), " %llu\n", first_boot_time + item->uptime);
+                sprintf(buffer + strlen(buffer), " %llu\n", first_boot_time + item->uptime);
+                count++;
+            }
         }
 
         sprintf(buffer + strlen(buffer),
@@ -437,6 +525,7 @@ static void httpPushData()
     }
     else
     {
+        sprintf(url, "%s", CFG_STR("http.update.url"));
         strcpy(content_type, "application/json");
 
         cJSON *json = cJSON_CreateObject();
@@ -452,34 +541,34 @@ static void httpPushData()
         for (int i = 0; i < MESSAGE_QUEUE_SIZE; i++) {
             message_t *item = &message_queue[i];
 
-            if (item->uptime == 0) continue; // Empty entry
-            count++;
-
-            cJSON *entry = cJSON_CreateObject();
-            cJSON_AddNumberToObject(entry, "time", first_boot_time + item->uptime);
-            cJSON_AddNumberToObject(entry, "offset", uptime() - item->uptime);
-            cJSON_AddNumberToObject(entry, "status", item->sensors_status);
-            for (int i = 0; i < SENSORS_COUNT; i++) {
-                if ((item->sensors_status & (1 << i)) == 0) {
-                    cJSON_AddNumberToObject(entry, SENSORS[i].key, F2D(item->sensors_data[i]));
-                } else {
-                    cJSON_AddNullToObject(entry, SENSORS[i].key); // Or maybe send nothing at all?
+            if (item->uptime == 0) {
+                cJSON *entry = cJSON_CreateObject();
+                cJSON_AddNumberToObject(entry, "time", first_boot_time + item->uptime);
+                cJSON_AddNumberToObject(entry, "offset", uptime() - item->uptime);
+                cJSON_AddNumberToObject(entry, "status", item->sensors_status);
+                for (int i = 0; i < SENSORS_COUNT; i++) {
+                    if ((item->sensors_status & (1 << i)) == 0) {
+                        cJSON_AddNumberToObject(entry, SENSORS[i].key, F2D(item->sensors_data[i]));
+                    } else {
+                        cJSON_AddNullToObject(entry, SENSORS[i].key); // Or maybe send nothing at all?
+                    }
                 }
+                cJSON_AddItemToArray(data, entry);
+                count++;
             }
-            cJSON_AddItemToArray(data, entry);
         }
 
         cJSON_PrintPreallocated(json, buffer, sizeof(buffer), false);
         cJSON_free(json);
     }
 
-    ESP_LOGI(__func__, "HTTP: Sending %d data frame(s) to '%s'...", count, url.c_str());
+    ESP_LOGI(__func__, "HTTP: Sending %d data frame(s) to '%s'...", count, url);
     ESP_LOGI(__func__, "HTTP: Body: '%s'", buffer);
     Display.printf("\nHTTP POST...");
 
     esp_http_client_config_t http_config = {};
 
-    http_config.url        = url.c_str();
+    http_config.url        = url;
     http_config.method     = HTTP_METHOD_POST;
     http_config.timeout_ms = CFG_INT("http.timeout") * 1000;
     if (strlen(CFG_STR("http.update.username")) > 0) {
@@ -579,7 +668,31 @@ void ntpTimeUpdate(const char *host = NTP_SERVER_1)
 }
 
 
-void setup()
+static esp_err_t event_handler(void *ctx, system_event_t *event)
+{
+    switch(event->event_id) {
+        case SYSTEM_EVENT_STA_START:
+            ESP_LOGI("WIFI", "SYSTEM_EVENT_STA_START");
+            ESP_ERROR_CHECK(esp_wifi_connect());
+            network.status = WL_CONNECTING;
+            break;
+        case SYSTEM_EVENT_STA_GOT_IP:
+            strcpy(network.ipv4, ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
+            ESP_LOGI("WIFI", "SYSTEM_EVENT_STA_GOT_IP: %s", network.ipv4);
+            network.status = WL_CONNECTED;
+            break;
+        case SYSTEM_EVENT_STA_DISCONNECTED:
+            ESP_LOGI("WIFI", "SYSTEM_EVENT_STA_DISCONNECTED");
+            network.status = WL_DISCONNECTED;
+            break;
+        default:
+            break;
+    }
+    return ESP_OK;
+}
+
+
+extern "C" void app_main()
 {
     printf("\n################### WEATHER STATION (Version: %s) ###################\n\n", PROJECT_VERSION);
     ESP_LOGI(__func__, "Build: %s (%s %s)", esp_app_desc.version, esp_app_desc.date, esp_app_desc.time);
@@ -600,30 +713,30 @@ void setup()
     digitalWrite(PERIPH_POWER_PIN, PERIPH_POWER_PIN_LEVEL);
     delay(10); // Wait for peripherals to stabilize
 
-    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-    Display.begin();
-
-    loadConfiguration();
-
-    ESP_LOGI(__func__, "Station name: '%s', group: '%s'", CFG_STR("STATION.NAME"), CFG_STR("STATION.GROUP"));
-    Display.printf("# %s #\n", CFG_STR("STATION.NAME"));
-    Display.printf("# Up: %lld minutes #\n", uptime() / 60000);
-
-    // Our button can always interrupt light and deep sleep
+    // Our action button can always interrupt light and deep sleep
     esp_sleep_enable_ext0_wakeup((gpio_num_t)ACTION_BUTTON_PIN, LOW);
     rtc_gpio_pulldown_dis((gpio_num_t)ACTION_BUTTON_PIN);
     rtc_gpio_pullup_en((gpio_num_t)ACTION_BUTTON_PIN);
 
+    tcpip_adapter_init();
+    esp_log_level_set("wifi", ESP_LOG_WARN);
+    esp_event_loop_init(event_handler, NULL);
+    loadConfiguration();
+    initArduino();
+
+    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+    Display.begin();
+    Display.printf("# %s #\n", CFG_STR("STATION.NAME"));
+    Display.printf("# Up: %lld minutes #\n", uptime() / 60000);
+
     // Check if we detect a long press
     checkActionButton();
-}
 
 
-void loop()
-{
+    // Main task
+
     const char *wifi_ssid = CFG_STR("wifi.ssid"), *wifi_password = CFG_STR("wifi.password");
-    const int  wifi_timeout_ms = CFG_INT("wifi.timeout") * 1000;
-
+    const long wifi_timeout = millis() + CFG_INT("wifi.timeout") * 1000;
     const bool wifi_available = strlen(wifi_ssid) > 0;
     const bool http_available = strlen(CFG_STR("http.update.url")) > 0 && rtc_millis() >= (next_http_update - 5000);
 
@@ -637,17 +750,11 @@ void loop()
     else {
         ESP_LOGI(__func__, "WiFi: Connecting to: '%s'...", wifi_ssid);
         Display.printf("\nConnecting to\n %s...", wifi_ssid);
-
-        esp_log_level_set("wifi", ESP_LOG_WARN); // Wifi driver is *very* verbose
-        WiFi.begin(wifi_ssid, wifi_password);
-        WiFi.setSleep(true);
+        wifi_init(WIFI_MODE_STA, wifi_ssid, wifi_password, NULL);
     }
-
 
     // Poll sensors while wifi connects
     pollSensors();
-    displaySensors();
-
 
     // Add sensors data to message (HTTP) queue
     message_t *item = &message_queue[message_queue_pos];
@@ -658,23 +765,20 @@ void loop()
     }
     message_queue_pos = (message_queue_pos + 1) % MESSAGE_QUEUE_SIZE;
 
-
     // Now do the http request!
     if (wifi_available && http_available) {
         Display.printf("\n");
-        while (WiFi.status() != WL_CONNECTED && millis() < wifi_timeout_ms) {
-            WiFi.waitStatusBits(STA_HAS_IP_BIT, 500);
+        while (network.status != WL_CONNECTED && millis() < wifi_timeout) {
             Display.printf(".");
+            delay(100);
         }
-
-        if (WiFi.status() == WL_CONNECTED) {
-            String local_ip = WiFi.localIP().toString();
-            ESP_LOGI(__func__, "WiFi: Connected to: '%s' with IP %s", wifi_ssid, local_ip.c_str());
-            Display.printf("Connected!\nIP: %s", local_ip.c_str());
+        if (network.status == WL_CONNECTED) {
+            ESP_LOGI(__func__, "WiFi: Connected to: '%s' with IP %s", wifi_ssid, network.ipv4);
+            Display.printf("Connected!\nIP: %s", network.ipv4);
+            // Start the config server allowing for a remote access
+            startConfigurationServer();
             // We don't have to do it every time, but since our RTC drifts 250ms per minute...
             ntpTimeUpdate();
-            // First check if messages are waiting for us
-            httpPullData();
             // Then push all our sensors data over HTTP
             httpPushData();
         }
@@ -682,22 +786,29 @@ void loop()
             ESP_LOGW(__func__, "WiFi: Failed to connect to: '%s'", wifi_ssid);
             Display.printf("\nFailed!");
         }
-        WiFi.disconnect(true);
         delay(200); // This resolves a crash
     }
 
+    // Display sensors again
+    displaySensors();
 
     // Keep the screen on for a while
-    int display_timeout = (is_interactive_wakeup ? CFG_INT("STATION.DISPLAY_TIMEOUT") : 1) * 1000 - millis();
+    int display_timeout = (is_interactive_wakeup ? 15 : CFG_INT("STATION.DISPLAY_TIMEOUT")) * 1000;
 
     if (Display.isPresent() && display_timeout > 50) {
-        ESP_LOGI(__func__, "Display will timeout in %dms (entering light-sleep)", display_timeout);
-        delay(50); // Time for the uart hardware buffer to empty
-        esp_sleep_enable_timer_wakeup((display_timeout - 50) * 1000);
-        esp_light_sleep_start();
-        checkActionButton(); // Mostly to debounce
+        // ESP_LOGI(__func__, "Display will timeout in %dms (entering light-sleep)", display_timeout);
+        // delay(50); // Time for the uart hardware buffer to empty
+        // esp_sleep_enable_timer_wakeup((display_timeout - 50) * 1000);
+        // esp_light_sleep_start();
+        // checkActionButton(); // Mostly to debounce
+        ESP_LOGI(__func__, "Display will timeout in %dms", display_timeout);
+        while (display_timeout > millis()) {
+            if (debounceButton(ACTION_BUTTON_PIN, LOW, 100)) {
+                while (debounceButton(ACTION_BUTTON_PIN, LOW, 100)); // Debounce
+                break;
+            }
+        }
     }
-
 
     // Deep-sleep
     hibernate();
