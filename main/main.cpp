@@ -5,6 +5,7 @@
 #include "sys/time.h"
 #include "sys/socket.h"
 #include "sys/param.h"
+#include "lwip/def.h"
 #include "netdb.h"
 #include "driver/rtc_io.h"
 #include "esp32/ulp.h"
@@ -29,6 +30,7 @@ static struct {
     char ipv4[32], ipv6[64];
     long mode = 0;
     long status = WL_UNKNOWN;
+    bool init = false;
     httpd_handle_t httpd = NULL;
 } network;
 
@@ -111,39 +113,6 @@ float ulp_wind_read_kph()
 }
 
 
-static void stopConfigurationServer();
-
-
-static void wifi_stop()
-{
-    stopConfigurationServer();
-    esp_wifi_disconnect();
-//    esp_wifi_stop();
-    network.status = WL_UNKNOWN;
-    *network.ssid = 0;
-}
-
-
-static void wifi_init(wifi_mode_t mode, const char *wifi_ssid, const char *wifi_password, const char *ip)
-{
-    wifi_stop();
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    wifi_config_t wifi_config = {};
-
-    strncpy((char*)network.ssid, wifi_ssid, 32);
-    network.mode = mode;
-    network.status = WL_CONNECTING;
-    strncpy((char*)wifi_config.sta.ssid, wifi_ssid, 32);
-    strncpy((char*)wifi_config.sta.password, wifi_password, 64);
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(mode));
-    ESP_ERROR_CHECK(esp_wifi_set_config((mode == WIFI_MODE_STA) ? ESP_IF_WIFI_STA : ESP_IF_WIFI_AP, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
-}
-
-
 int64_t rtc_millis()
 {
     struct timeval curTime;
@@ -211,10 +180,28 @@ static void loadConfiguration()
 }
 
 
+static void wifi_init(wifi_mode_t mode, const char *wifi_ssid, const char *wifi_password, const char *ip)
+{
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    wifi_config_t wifi_config = {};
+    network.mode = mode;
+    network.status = WL_CONNECTING;
+    strncpy((char*)network.ssid, wifi_ssid, 32);
+    strncpy((char*)wifi_config.sta.ssid, wifi_ssid, 32);
+    strncpy((char*)wifi_config.sta.password, wifi_password, 64);
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_stop());
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_mode(mode));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_config((mode == WIFI_MODE_STA) ? ESP_IF_WIFI_STA : ESP_IF_WIFI_AP, &wifi_config));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_start());
+}
+
+
 static void hibernate()
 {
     // Stop WiFi
-    wifi_stop();
+    esp_wifi_stop();
 
     // If we reach this point it means the updated app works.
     FwUpdater.markAppValid();
@@ -283,17 +270,6 @@ static bool firmware_upgrade_end()
 }
 
 
-static void firmware_upgrade_from_http(const char *url)
-{
-    ESP_LOGI(__func__, "Flashing firmware from '%s'...", url);
-
-    if (firmware_upgrade_begin() && FwUpdater.writeFromHTTP(url) && firmware_upgrade_end()) {
-        delay(10 * 1000);
-        esp_restart();
-    }
-}
-
-
 static void urldecode(char *input)
 {
     char *leader = input, *follower = leader;
@@ -321,18 +297,12 @@ static void urldecode(char *input)
 }
 
 
-static void stopConfigurationServer()
+static void startConfigurationServer(bool force_ap = false)
 {
     if (network.httpd != NULL) {
         httpd_stop(network.httpd);
         network.httpd = NULL;
     }
-}
-
-
-static void startConfigurationServer(bool force_ap = false)
-{
-    stopConfigurationServer();
 
     if (network.status != WL_CONNECTED && !force_ap && strlen(CFG_STR("wifi.ssid")) > 0) {
         ESP_LOGI("AP", "Starting Configuration server on local wifi");
@@ -404,23 +374,23 @@ static void startConfigurationServer(bool force_ap = false)
         char* fw_buffer = (char*)malloc(4096);
         int remaining = req->content_len;
 
-        ESP_LOGI("HTTP", "=========== RECEIVED DATA ==========");
-        // firmware_upgrade_begin();
+        firmware_upgrade_begin();
 
         while (remaining > 0) {
             int ret = httpd_req_recv(req, fw_buffer, MIN(remaining, 4096));
             if (ret <= 0) {
                 return ESP_FAIL;
             }
-            remaining -= ret;
 
-            // if (!FwUpdater.write(upload.buf, upload.currentSize)) {
-            //     ESP_LOGE("Upload", "Firmware update: Write error (%d bytes)", upload.currentSize);
-            // }
+            if (!FwUpdater.write((uint8_t*)fw_buffer, ret)) {
+                ESP_LOGE("Upload", "Firmware update: Write error (%d bytes)", ret);
+                return ESP_FAIL;
+            }
+
+            remaining -= ret;
         }
 
-        ESP_LOGI("HTTP", "====================================");
-        // firmware_upgrade_end();
+        firmware_upgrade_end();
         free(fw_buffer);
 
         HTTP_RESPONSE(req, "<h1>Firmware upgrade successful!</h1>");
@@ -685,6 +655,8 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
             ESP_LOGI("WIFI", "SYSTEM_EVENT_STA_DISCONNECTED");
             network.status = WL_DISCONNECTED;
             break;
+        case SYSTEM_EVENT_AP_START:
+        case SYSTEM_EVENT_AP_STOP:
         default:
             break;
     }
