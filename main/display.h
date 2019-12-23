@@ -35,7 +35,10 @@ static class {
         va_end(argptr);
 
         if (m_useOLED) {
-            m_display.print(buffer);
+            char *c = buffer;
+            while (*c != 0) {
+                m_display.write(*c++);
+            }
         } else {
             ::printf("[DISPLAY] %s", buffer);
         }

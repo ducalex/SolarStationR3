@@ -7,9 +7,6 @@
 #include "string.h"
 #include "stdio.h"
 #include "FwUpdater.h"
-#ifdef ARDUINO_ARCH_ESP32
-#include "esp32-hal-log.h"
-#endif
 
 static const char *MODULE = "FwUpdater";
 static const char *ERROR_STRINGS[] = {
@@ -87,7 +84,7 @@ bool FwUpdaterClass::end()
     esp_err_t err = esp_ota_end(m_otaHandle);
     if (err != ESP_OK) {
         m_lastError =  (err == ESP_ERR_OTA_VALIDATE_FAILED) ? FWU_ERR_CHECKSUM_FAILED : FWU_ERR_UNSPECIFIED;
-        ESP_LOGE(MODULE, "OTA End failed %s (ESP error: %s)", esp_err_to_name(err));
+        ESP_LOGE(MODULE, "OTA End failed (ESP error: %s)", esp_err_to_name(err));
         return false;
     }
 

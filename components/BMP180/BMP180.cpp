@@ -4,10 +4,10 @@
  */
 static const char *MODULE = "BMP180";
 
-#include <stdlib.h>
-#include <stdint.h>
-#include <unistd.h>
+#include "Arduino.h"
 #include "Wire.h"
+#include "stdlib.h"
+#include "stdint.h"
 
 #include "BMP180.h"
 
@@ -37,7 +37,7 @@ static uint16_t readInt(uint8_t i2c_address, uint8_t reg, uint8_t size)
 static uint16_t readRawTemperature(bmp180_dev_t *dev)
 {
     writeReg(dev->i2c_address, BMP180_REG_CONTROL, BMP180_CMD_READTEMP);
-    usleep(5 * 1000);
+    delay(5);
     return readInt(dev->i2c_address, BMP180_REG_RESULT, 2);
 }
 
@@ -50,7 +50,7 @@ static uint32_t readRawPressure(bmp180_dev_t *dev)
         (uint8_t)(BMP180_CMD_READPRESSURE + (dev->oversampling << 6)));
 
     uint8_t delays[] = {5, 8, 14, 26};
-    usleep(delays[dev->oversampling % 4] * 1000);
+    delay(delays[dev->oversampling % 4]);
 
     raw = (readInt(dev->i2c_address, BMP180_REG_RESULT, 2) << 8)
             | readInt(dev->i2c_address, BMP180_REG_RESULT + 2, 1);

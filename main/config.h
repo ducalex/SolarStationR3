@@ -29,7 +29,7 @@
 #define DEFAULT_STATION_NAME                   "SolarStationR3"  // Used as device ID by InfluxDB and SQL, and as group by Adafruit.io
 #define DEFAULT_STATION_GROUP                  "weather"         // Used as measurement prefix in InfluxDB and table prefix in SQL
 #define DEFAULT_STATION_POLL_INTERVAL          60                // Seconds
-#define DEFAULT_STATION_DISPLAY_TIMEOUT        10                // Seconds
+#define DEFAULT_STATION_SLEEP_DELAY            10                // Seconds
 #define DEFAULT_STATION_DISPLAY_CONTENT        "Volt: $bat.2 $sol.2\n"   \
                                                "Light: $l1.0 $l2.0\n"    \
                                                "Temp: $t1.2 $t2.2\n"     \

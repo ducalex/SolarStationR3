@@ -1,4 +1,5 @@
 #include "Arduino.h"
+#include "Wire.h"
 #include "FwUpdater.h"
 #include "ConfigProvider.h"
 #include "cJSON.h"
@@ -7,8 +8,6 @@
 #include "sys/param.h"
 #include "lwip/def.h"
 #include "netdb.h"
-#include "driver/rtc_io.h"
-#include "esp32/ulp.h"
 #include "esp_http_client.h"
 #include "esp_http_server.h"
 #include "esp_wifi.h"
@@ -22,15 +21,15 @@
 #include "macros.h"
 #include "display.h"
 #include "sensors.h"
+#include "ulp.h"
 
-enum { WL_UNKNOWN = 0, WL_IDLE, WL_CONNECTING, WL_CONNECTED, WL_DISCONNECTED };
+enum { WL_STOPPED = 0, WL_CONNECTING, WL_CONNECTED, WL_DISCONNECTED };
 
 static struct {
     char ssid[32];
     char ipv4[32], ipv6[64];
     long mode = 0;
-    long status = WL_UNKNOWN;
-    bool init = false;
+    long status = WL_STOPPED;
     httpd_handle_t httpd = NULL;
 } network;
 
@@ -50,67 +49,10 @@ RTC_DATA_ATTR static double  time_correction = 0;
 RTC_DATA_ATTR static message_t message_queue[MESSAGE_QUEUE_SIZE];
 RTC_DATA_ATTR static int16_t message_queue_pos = 0;
 static bool is_interactive_wakeup = true;
+static long sleep_timeout = 0;
 ConfigProvider config;
 
 extern const esp_app_desc_t esp_app_desc;
-
-extern const uint8_t ulp_wind_bin_start[] asm("_binary_ulp_wind_bin_start");
-extern const uint8_t ulp_wind_bin_end[]   asm("_binary_ulp_wind_bin_end");
-// Maybe we should use a circular buffer so we can get average/mean/max/min?
-extern uint32_t ulp_edge_count_max;
-extern uint32_t ulp_loops_in_period;
-extern uint32_t ulp_rtc_io;
-extern uint32_t ulp_entry;
-
-const uint32_t ulp_wind_sample_length_us = 10 * 1000 * 1000;
-const uint32_t ulp_wind_period_us = 500;
-
-void ulp_wind_start()
-{
-    esp_err_t err = ulp_load_binary(0, ulp_wind_bin_start,
-            (ulp_wind_bin_end - ulp_wind_bin_start) / sizeof(uint32_t));
-
-    if (err != ESP_OK) {
-        ESP_LOGE("ULP", "Failed to load the ULP binary! (%s)", esp_err_to_name(err));
-        return;
-    }
-
-    gpio_num_t gpio_num = (gpio_num_t)ANEMOMETER_PIN;
-    assert(rtc_gpio_desc[gpio_num].reg && "GPIO used for pulse counting must be an RTC IO");
-
-    ulp_rtc_io = rtc_gpio_desc[gpio_num].rtc_num; /* map from GPIO# to RTC_IO# */
-    ulp_loops_in_period = ulp_wind_sample_length_us / ulp_wind_period_us;
-
-    rtc_gpio_init(gpio_num);
-    rtc_gpio_set_direction(gpio_num, RTC_GPIO_MODE_INPUT_ONLY);
-    rtc_gpio_pulldown_dis(gpio_num);
-    rtc_gpio_pullup_en(gpio_num);
-    rtc_gpio_hold_en(gpio_num);
-
-    ulp_set_wakeup_period(0, ulp_wind_period_us);
-
-    err = ulp_run(&ulp_entry - RTC_SLOW_MEM);
-
-    if (err == ESP_OK) {
-        ESP_LOGI("ULP", "ULP wind program started!");
-    } else {
-        ESP_LOGE("ULP", "Failed to start the ULP binary! (%s)", esp_err_to_name(err));
-    }
-}
-
-
-float ulp_wind_read_kph()
-{
-    float rotations = (ulp_edge_count_max & UINT16_MAX) / 2;
-    float rpm = rotations / (ulp_wind_sample_length_us / 1000 / 1000) * 60;
-    float circ = (2 * 3.141592 * CFG_DBL("sensors.anemometer.radius")) / 100 / 1000;
-    float kph = rpm * 60 * circ * CFG_DBL("sensors.anemometer.calibration");
-
-    // Reset the counter
-    ulp_edge_count_max = 0;
-
-    return kph;
-}
 
 
 int64_t rtc_millis()
@@ -154,7 +96,7 @@ static void loadConfiguration()
     CFG_LOAD_STR("station.name", DEFAULT_STATION_NAME);
     CFG_LOAD_STR("station.group", DEFAULT_STATION_GROUP);
     CFG_LOAD_INT("station.poll_interval", DEFAULT_STATION_POLL_INTERVAL);
-    CFG_LOAD_INT("station.display_timeout", DEFAULT_STATION_DISPLAY_TIMEOUT);
+    CFG_LOAD_INT("station.sleep_delay", DEFAULT_STATION_SLEEP_DELAY);
     CFG_LOAD_STR("station.display_content", DEFAULT_STATION_DISPLAY_CONTENT);
     CFG_LOAD_STR("wifi.ssid", DEFAULT_WIFI_SSID);
     CFG_LOAD_STR("wifi.password", DEFAULT_WIFI_PASSWORD);
@@ -176,20 +118,31 @@ static void loadConfiguration()
     CFG_LOAD_DBL("sensors.anemometer.radius", DEFAULT_SENSORS_ANEMOMETER_RADIUS);
     CFG_LOAD_DBL("sensors.anemometer.calibration", DEFAULT_SENSORS_ANEMOMETER_CALIBRATION);
 
-    ESP_LOGI(__func__, "Station name: '%s', group: '%s'", CFG_STR("STATION.NAME"), CFG_STR("STATION.GROUP"));
+    ESP_LOGI("config", "Station name: '%s', group: '%s'", CFG_STR("STATION.NAME"), CFG_STR("STATION.GROUP"));
 }
 
 
-static void wifi_init(wifi_mode_t mode, const char *wifi_ssid, const char *wifi_password, const char *ip)
+static void wifi_stop()
 {
+    if (network.status != WL_STOPPED) {
+        network.status = WL_STOPPED;
+        esp_wifi_stop();
+        esp_wifi_deinit();
+    }
+}
+
+
+static void wifi_start(wifi_mode_t mode, const char *wifi_ssid, const char *wifi_password, const char *ip)
+{
+    wifi_stop();
+
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     wifi_config_t wifi_config = {};
-    network.mode = mode;
-    network.status = WL_CONNECTING;
+    strncpy((char*)wifi_config.ap.ssid, wifi_ssid, 32);
+    strncpy((char*)wifi_config.ap.password, wifi_password, 64);
     strncpy((char*)network.ssid, wifi_ssid, 32);
-    strncpy((char*)wifi_config.sta.ssid, wifi_ssid, 32);
-    strncpy((char*)wifi_config.sta.password, wifi_password, 64);
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_stop());
+    network.status = WL_CONNECTING;
+    network.mode = mode;
     ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_mode(mode));
@@ -201,7 +154,7 @@ static void wifi_init(wifi_mode_t mode, const char *wifi_ssid, const char *wifi_
 static void hibernate()
 {
     // Stop WiFi
-    esp_wifi_stop();
+    wifi_stop();
 
     // If we reach this point it means the updated app works.
     FwUpdater.markAppValid();
@@ -272,19 +225,15 @@ static bool firmware_upgrade_end()
 
 static void urldecode(char *input)
 {
-    char *leader = input, *follower = leader;
+    char *leader = input, *follower = input;
 
     while (*leader) {
         if (*leader == '%') {
-            leader++;
-            char high = *leader;
-            leader++;
-            char low = *leader;
+            char high = *++leader;
+            char low = *++leader;
             if (high > 0x39) high -= 7;
-            high &= 0x0f;
             if (low > 0x39) low -= 7;
-            low &= 0x0f;
-            *follower = (high << 4) | low;
+            *follower = ((high & 0xf) << 4) | (low & 0xf);
         } else if (*leader == '+') {
             *follower = ' ';
         } else {
@@ -297,7 +246,23 @@ static void urldecode(char *input)
 }
 
 
-static void startConfigurationServer(bool force_ap = false)
+static void http_response(httpd_req_t * req, const char *body)
+{
+    const char *format = "<html><head><meta name=viewport content='width=device-width,initial-scale=0'><style>" \
+        "body{font-family:sans-serif}label,input,a{font-size:2em;margin:0 5px}textarea{-moz-tab-size:2;;width:100%%;height:75vh}" \
+        "</style></head><body><h1>%s</h1>%s</body></html>";
+
+    char *buffer = (char *)calloc(512 + strlen(body), 1);
+    sprintf(buffer, format, CFG_STR("STATION.NAME"), body);
+    httpd_resp_sendstr(req, buffer);
+    free(buffer);
+
+    sleep_timeout = millis() + (120 * 1000);
+    ESP_LOGI("SERVER", "Web request received, going to sleep in %lds!", (sleep_timeout - millis()) / 1000);
+}
+
+
+static void startConfigurationServer(bool force_ap = false, bool exclusive = false)
 {
     if (network.httpd != NULL) {
         httpd_stop(network.httpd);
@@ -305,9 +270,9 @@ static void startConfigurationServer(bool force_ap = false)
     }
 
     if (network.status != WL_CONNECTED && !force_ap && strlen(CFG_STR("wifi.ssid")) > 0) {
-        ESP_LOGI("AP", "Starting Configuration server on local wifi");
+        ESP_LOGI("SERVER", "Starting Configuration server on local wifi");
         Display.printf("Connecting...");
-        wifi_init(WIFI_MODE_STA, CFG_STR("wifi.ssid"), CFG_STR("wifi.password"), NULL);
+        wifi_start(WIFI_MODE_STA, CFG_STR("wifi.ssid"), CFG_STR("wifi.password"), NULL);
 
         int timeout = millis() + (CFG_INT("wifi.timeout") * 1000);
         while (network.status != WL_CONNECTED && millis() < timeout) {
@@ -316,57 +281,53 @@ static void startConfigurationServer(bool force_ap = false)
         }
 
         if (network.status == WL_CONNECTED) {
-            ESP_LOGI("AP", "Wifi connected. SSID: %s  IP: %s", network.ssid, network.ipv4);
+            ESP_LOGI("SERVER", "Wifi connected. SSID: %s  IP: %s", network.ssid, network.ipv4);
         } else {
-            ESP_LOGW("AP", "Unable to connect to '%s'", network.ssid);
+            ESP_LOGW("SERVER", "Unable to connect to '%s'", network.ssid);
         }
     }
 
     if (network.status != WL_CONNECTED || force_ap) {
-        ESP_LOGI("AP", "Starting Configuration server on access point");
+        ESP_LOGI("SERVER", "Starting Configuration server on access point");
         Display.printf("Starting Access Point...");
-        wifi_init(WIFI_MODE_AP, CFG_STR("station.name"), "", NULL);
+        wifi_start(WIFI_MODE_AP, CFG_STR("station.name"), "", NULL);
         delay(500);
-        ESP_LOGI("AP", "Access point started. SSID: %s  IP: %s", network.ssid, network.ipv4);
+        ESP_LOGI("SERVER", "Access point started. SSID: %s  IP: %s", network.ssid, network.ipv4);
     }
 
     Display.clear();
     Display.printf("Configuration Server:\n\n");
     Display.printf("Mode: %s\n", (network.mode == WIFI_MODE_STA) ? "Local Client" : "Access point");
 
-    #define HTTP_RESPONSE(req, body) \
-        String resp_str = String("<html><head><meta name=viewport content='width=device-width,initial-scale=0'><style>" \
-            "body{font-family:sans-serif}label,input,a{font-size:2em;margin:0 5px}textarea{tab-size:2;;width:100%; height:75vh}" \
-            "</style></head><body><h1>") + String(CFG_STR("STATION.NAME")) + "</h1>" + String(body) + "</body></html>"; \
-        httpd_resp_sendstr(req, resp_str.c_str());
-
     auto home_handler = [](httpd_req_t *req) {
-        String body = "";
+        char *body = (char*)calloc(2048, 1);
 
         if (req->method == HTTP_POST) {
-            char* http_buffer = (char*)calloc(2048, 1);
-            char* cfg_buffer = (char*)calloc(2048, 1);
-            httpd_req_recv(req, http_buffer, MIN(req->content_len, 2048));
-            httpd_query_key_value(http_buffer, "config", cfg_buffer, 2048);
+            char *rcv_buffer = (char*)calloc(req->content_len + 2, 1);
+            char *cfg_buffer = (char*)calloc(req->content_len + 2, 1);
+            httpd_req_recv(req, rcv_buffer, req->content_len + 1);
+            httpd_query_key_value(rcv_buffer, "config", cfg_buffer, req->content_len);
             urldecode(cfg_buffer);
 
             if (config.loadJSON(cfg_buffer)) {
                 config.saveNVS(CONFIG_USE_NVS, true);
                 loadConfiguration();
-                body += "<h2>Configuration saved!</h2>";
+                strcat(body, "<h2>Configuration saved!</h2>");
             } else {
-                body += "<h2>Invalid JSON!</h2>";
+                strcat(body, "<h2>Invalid JSON!</h2>");
             }
-            free(http_buffer);
+            free(rcv_buffer);
             free(cfg_buffer);
         }
 
-        body += "<form method='post'><textarea name='config'>" + String(config.saveJSON()) + "</textarea>";
-        body += "</textarea><p><input type='submit' value='Save'> <a href='/restart'>Restart</a></p></form><hr>";
-        body += "<form action='/upgrade' method='post' enctype='multipart/form-data'><label>Update firmware:</label>";
-        body += "<input type='file' name='file' style='max-width:50%'><input type='submit' value='Update'></form>";
+        strcat(body, "<form method='post'><textarea name='config'>");
+        strcat(body, config.saveJSON());
+        strcat(body, "</textarea><p><input type='submit' value='Save'> <a href='/restart'>Restart</a></p></form><hr>");
+        strcat(body, "<form action='/upgrade' method='post' enctype='multipart/form-data'><label>Update firmware:</label>");
+        strcat(body, "<input type='file' name='file' style='max-width:50%'><input type='submit' value='Update'></form>");
+        http_response(req, body);
+        free(body);
 
-        HTTP_RESPONSE(req, body);
         return ESP_OK;
     };
 
@@ -393,12 +354,12 @@ static void startConfigurationServer(bool force_ap = false)
         firmware_upgrade_end();
         free(fw_buffer);
 
-        HTTP_RESPONSE(req, "<h1>Firmware upgrade successful!</h1>");
+        http_response(req, "<h1>Firmware upgrade successful!</h1>");
         return ESP_OK;
     };
 
     auto restart_handler = [](httpd_req_t *req) {
-        HTTP_RESPONSE(req, "Goodbye!");
+        http_response(req, "Goodbye!");
         delay(500);
         esp_restart();
         return ESP_OK;
@@ -426,24 +387,13 @@ static void startConfigurationServer(bool force_ap = false)
         ESP_LOGI("SERVER", "Error starting server!");
         exit(-1);
     }
-}
 
-
-static bool checkActionButton()
-{
-    bool force_ap = false;
-    if (debounceButton(ACTION_BUTTON_PIN, LOW, 2500)) {
-        long server_timeout = millis() + 15 * 60000;
-        startConfigurationServer(force_ap);
-        debounceButton(ACTION_BUTTON_PIN, LOW, 10000);
-        while (server_timeout > millis()) {
-            if (debounceButton(ACTION_BUTTON_PIN, LOW, 250)) {
-                startConfigurationServer(force_ap = !force_ap);
-            }
+    while (exclusive && sleep_timeout > millis()) {
+        if (debounceButton(ACTION_BUTTON_PIN, LOW, 1000)) {
+            startConfigurationServer(!force_ap, exclusive);
+            break;
         }
-        esp_restart();
     }
-    return false;
 }
 
 
@@ -655,8 +605,12 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
             ESP_LOGI("WIFI", "SYSTEM_EVENT_STA_DISCONNECTED");
             network.status = WL_DISCONNECTED;
             break;
-        case SYSTEM_EVENT_AP_START:
-        case SYSTEM_EVENT_AP_STOP:
+        case SYSTEM_EVENT_AP_STACONNECTED:
+            ESP_LOGI("WIFI", "SYSTEM_EVENT_AP_STACONNECTED:" MACSTR, MAC2STR(event->event_info.sta_connected.mac));
+            break;
+        case SYSTEM_EVENT_AP_STADISCONNECTED:
+            ESP_LOGI("WIFI", "SYSTEM_EVENT_AP_STADISCONNECTED:" MACSTR, MAC2STR(event->event_info.sta_disconnected.mac));
+            break;
         default:
             break;
     }
@@ -667,18 +621,19 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
 extern "C" void app_main()
 {
     printf("\n################### WEATHER STATION (Version: %s) ###################\n\n", PROJECT_VERSION);
-    ESP_LOGI(__func__, "Build: %s (%s %s)", esp_app_desc.version, esp_app_desc.date, esp_app_desc.time);
-    ESP_LOGI(__func__, "Uptime: %llu seconds (Cycles: %lu)", uptime() / 1000, wake_count);
+    ESP_LOGI("Build", "%s (%s %s)", esp_app_desc.version, esp_app_desc.date, esp_app_desc.time);
+    ESP_LOGI("Uptime", "%llu seconds (Cycles: %d)", uptime() / 1000, wake_count);
     PRINT_MEMORY_STATS(); const esp_partition_t *partition = esp_ota_get_running_partition();
-    ESP_LOGI(__func__, "Partition: '%s', offset: 0x%x", partition->label, partition->address);
+    ESP_LOGI("Partition", "'%s', offset: 0x%x", partition->label, partition->address);
 
     if (wake_count++ == 0) {
         first_boot_time = rtc_millis();
-        ulp_wind_start();
+        ulp_wind_start(ANEMOMETER_PIN);
     }
 
     // This will determine how long the display is kept on and how we handle certain events
     is_interactive_wakeup = (wake_count == 1 || esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0);
+    sleep_timeout = 120 * 1000; // This will be reduced later on
 
     // Power up our peripherals
     pinMode(PERIPH_POWER_PIN, OUTPUT);
@@ -694,7 +649,6 @@ extern "C" void app_main()
     esp_log_level_set("wifi", ESP_LOG_WARN);
     esp_event_loop_init(event_handler, NULL);
     loadConfiguration();
-    initArduino();
 
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     Display.begin();
@@ -702,27 +656,22 @@ extern "C" void app_main()
     Display.printf("# Up: %lld minutes #\n", uptime() / 60000);
 
     // Check if we detect a long press
-    checkActionButton();
-
+    if (debounceButton(ACTION_BUTTON_PIN, LOW, 2500)) {
+        startConfigurationServer(false, true);
+    }
 
     // Main task
-
     const char *wifi_ssid = CFG_STR("wifi.ssid"), *wifi_password = CFG_STR("wifi.password");
-    const long wifi_timeout = millis() + CFG_INT("wifi.timeout") * 1000;
-    const bool wifi_available = strlen(wifi_ssid) > 0;
-    const bool http_available = strlen(CFG_STR("http.update.url")) > 0 && rtc_millis() >= (next_http_update - 5000);
+    const long wifi_available = strlen(wifi_ssid) > 0, wifi_timeout = millis() + CFG_INT("wifi.timeout") * 1000;
+    const bool use_network = wifi_available && rtc_millis() >= (next_http_update - 5000);
 
     if (!wifi_available) {
-        ESP_LOGI(__func__, "WiFi: No configuration");
-        Display.printf("\nWiFi disabled!");
-    }
-    else if (!http_available) {
-        ESP_LOGI(__func__, "Polling sensors");
-    }
-    else {
-        ESP_LOGI(__func__, "WiFi: Connecting to: '%s'...", wifi_ssid);
+        ESP_LOGI("WiFi", "Network configuration not found!");
+        Display.printf("\nNo wifi configuration!");
+    } else if (use_network) {
+        ESP_LOGI("WiFi", "Connecting to: '%s'...", wifi_ssid);
         Display.printf("\nConnecting to\n %s...", wifi_ssid);
-        wifi_init(WIFI_MODE_STA, wifi_ssid, wifi_password, NULL);
+        wifi_start(WIFI_MODE_STA, wifi_ssid, wifi_password, NULL);
     }
 
     // Poll sensors while wifi connects
@@ -738,45 +687,41 @@ extern "C" void app_main()
     message_queue_pos = (message_queue_pos + 1) % MESSAGE_QUEUE_SIZE;
 
     // Now do the http request!
-    if (wifi_available && http_available) {
+    if (use_network) {
         Display.printf("\n");
         while (network.status != WL_CONNECTED && millis() < wifi_timeout) {
             Display.printf(".");
             delay(100);
         }
         if (network.status == WL_CONNECTED) {
-            ESP_LOGI(__func__, "WiFi: Connected to: '%s' with IP %s", wifi_ssid, network.ipv4);
+            ESP_LOGI("WiFi", "Connected to: '%s' with IP %s", network.ssid, network.ipv4);
             Display.printf("Connected!\nIP: %s", network.ipv4);
             // Start the config server allowing for a remote access
             startConfigurationServer();
             // We don't have to do it every time, but since our RTC drifts 250ms per minute...
             ntpTimeUpdate();
             // Then push all our sensors data over HTTP
-            httpPushData();
+            if (strlen(CFG_STR("http.update.url")) > 0) {
+                httpPushData();
+            }
         }
         else {
-            ESP_LOGW(__func__, "WiFi: Failed to connect to: '%s'", wifi_ssid);
+            ESP_LOGW("WiFi", "Failed to connect to: '%s'", wifi_ssid);
             Display.printf("\nFailed!");
         }
-        delay(200); // This resolves a crash
     }
 
     // Display sensors again
     displaySensors();
 
-    // Keep the screen on for a while
-    int display_timeout = (is_interactive_wakeup ? 15 : CFG_INT("STATION.DISPLAY_TIMEOUT")) * 1000;
+    // Keep the screen and server active for a while
+    sleep_timeout = (is_interactive_wakeup ? 15 : CFG_INT("STATION.SLEEP_DELAY")) * 1000;
 
-    if (Display.isPresent() && display_timeout > 50) {
-        // ESP_LOGI(__func__, "Display will timeout in %dms (entering light-sleep)", display_timeout);
-        // delay(50); // Time for the uart hardware buffer to empty
-        // esp_sleep_enable_timer_wakeup((display_timeout - 50) * 1000);
-        // esp_light_sleep_start();
-        // checkActionButton(); // Mostly to debounce
-        ESP_LOGI(__func__, "Display will timeout in %dms", display_timeout);
-        while (display_timeout > millis()) {
+    if (sleep_timeout > millis()) {
+        ESP_LOGI(__func__, "Going to sleep in %ldms", sleep_timeout - millis());
+        while (sleep_timeout > millis()) {
             if (debounceButton(ACTION_BUTTON_PIN, LOW, 100)) {
-                while (debounceButton(ACTION_BUTTON_PIN, LOW, 100)); // Debounce
+                while (digitalRead(ACTION_BUTTON_PIN) == LOW); // Debounce
                 break;
             }
         }

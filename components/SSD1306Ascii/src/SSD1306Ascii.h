@@ -84,9 +84,8 @@ inline void oledReset(uint8_t rst) {
  * @class SSD1306Ascii
  * @brief SSD1306 base class
  */
-class SSD1306Ascii : public Print {
+class SSD1306Ascii {
  public:
-  using Print::write;
   SSD1306Ascii() {}
 #if INCLUDE_SCROLLING
 //------------------------------------------------------------------------------
