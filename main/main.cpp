@@ -1,5 +1,6 @@
 #include "Arduino.h"
 #include "Wire.h"
+#include "WiFi.h"
 #include "FwUpdater.h"
 #include "ConfigProvider.h"
 #include "cJSON.h"
@@ -10,9 +11,6 @@
 #include "netdb.h"
 #include "esp_http_client.h"
 #include "esp_http_server.h"
-#include "esp_wifi.h"
-#include "esp_event_loop.h"
-#include "esp_event_legacy.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_log.h"
@@ -22,16 +20,6 @@
 #include "display.h"
 #include "sensors.h"
 #include "ulp.h"
-
-enum { WL_STOPPED = 0, WL_CONNECTING, WL_CONNECTED, WL_DISCONNECTED };
-
-static struct {
-    char ssid[32];
-    char ipv4[32], ipv6[64];
-    long mode = 0;
-    long status = WL_STOPPED;
-    httpd_handle_t httpd = NULL;
-} network;
 
 typedef struct {
     int64_t  uptime; // Uptime can work before NTP lock, timestamp cannot
@@ -50,6 +38,7 @@ RTC_DATA_ATTR static message_t message_queue[MESSAGE_QUEUE_SIZE];
 RTC_DATA_ATTR static int16_t message_queue_pos = 0;
 static bool is_interactive_wakeup = true;
 static long sleep_timeout = 0;
+static httpd_handle_t httpd = NULL;
 ConfigProvider config;
 
 extern const esp_app_desc_t esp_app_desc;
@@ -122,39 +111,10 @@ static void loadConfiguration()
 }
 
 
-static void wifi_stop()
-{
-    if (network.status != WL_STOPPED) {
-        network.status = WL_STOPPED;
-        esp_wifi_stop();
-        esp_wifi_deinit();
-    }
-}
-
-
-static void wifi_start(wifi_mode_t mode, const char *wifi_ssid, const char *wifi_password, const char *ip)
-{
-    wifi_stop();
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    wifi_config_t wifi_config = {};
-    strncpy((char*)wifi_config.ap.ssid, wifi_ssid, 32);
-    strncpy((char*)wifi_config.ap.password, wifi_password, 64);
-    strncpy((char*)network.ssid, wifi_ssid, 32);
-    network.status = WL_CONNECTING;
-    network.mode = mode;
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_mode(mode));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_config((mode == WIFI_MODE_STA) ? ESP_IF_WIFI_STA : ESP_IF_WIFI_AP, &wifi_config));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_start());
-}
-
-
 static void hibernate()
 {
     // Stop WiFi
-    wifi_stop();
+    WiFi.stop();
 
     // If we reach this point it means the updated app works.
     FwUpdater.markAppValid();
@@ -264,40 +224,40 @@ static void http_response(httpd_req_t * req, const char *body)
 
 static void startConfigurationServer(bool force_ap = false, bool exclusive = false)
 {
-    if (network.httpd != NULL) {
-        httpd_stop(network.httpd);
-        network.httpd = NULL;
+    if (httpd != NULL) {
+        httpd_stop(httpd);
+        httpd = NULL;
     }
 
-    if (network.status != WL_CONNECTED && !force_ap && strlen(CFG_STR("wifi.ssid")) > 0) {
+    if (WiFi.status() != WL_CONNECTED && !force_ap && strlen(CFG_STR("wifi.ssid")) > 0) {
         ESP_LOGI("SERVER", "Starting Configuration server on local wifi");
         Display.printf("Connecting...");
-        wifi_start(WIFI_MODE_STA, CFG_STR("wifi.ssid"), CFG_STR("wifi.password"), NULL);
+        WiFi.begin(CFG_STR("wifi.ssid"), CFG_STR("wifi.password"));
 
         int timeout = millis() + (CFG_INT("wifi.timeout") * 1000);
-        while (network.status != WL_CONNECTED && millis() < timeout) {
+        while (WiFi.status() != WL_CONNECTED && millis() < timeout) {
             Display.printf(".");
             delay(250);
         }
 
-        if (network.status == WL_CONNECTED) {
-            ESP_LOGI("SERVER", "Wifi connected. SSID: %s  IP: %s", network.ssid, network.ipv4);
+        if (WiFi.status() == WL_CONNECTED) {
+            ESP_LOGI("SERVER", "Wifi connected. SSID: %s  IP: %s", WiFi.SSID(), WiFi.localIP());
         } else {
-            ESP_LOGW("SERVER", "Unable to connect to '%s'", network.ssid);
+            ESP_LOGW("SERVER", "Unable to connect to '%s'", WiFi.SSID());
         }
     }
 
-    if (network.status != WL_CONNECTED || force_ap) {
+    if (WiFi.status() != WL_CONNECTED || force_ap) {
         ESP_LOGI("SERVER", "Starting Configuration server on access point");
         Display.printf("Starting Access Point...");
-        wifi_start(WIFI_MODE_AP, CFG_STR("station.name"), "", NULL);
+        WiFi.beginAP(CFG_STR("station.name"), "");
         delay(500);
-        ESP_LOGI("SERVER", "Access point started. SSID: %s  IP: %s", network.ssid, network.ipv4);
+        ESP_LOGI("SERVER", "Access point started. SSID: %s  IP: %s", WiFi.SSID(), WiFi.localIP());
     }
 
     Display.clear();
     Display.printf("Configuration Server:\n\n");
-    Display.printf("Mode: %s\n", (network.mode == WIFI_MODE_STA) ? "Local Client" : "Access point");
+    Display.printf("Mode: %s\n", (WiFi.mode() == WL_MODE_STA) ? "Local Client" : "Access point");
 
     auto home_handler = [](httpd_req_t *req) {
         char *body = (char*)calloc(2048, 1);
@@ -374,13 +334,13 @@ static void startConfigurationServer(bool force_ap = false, bool exclusive = fal
     };
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    if (httpd_start(&network.httpd, &config) == ESP_OK) {
+    if (httpd_start(&httpd, &config) == ESP_OK) {
         for (int i = 0; i < (sizeof(handlers) / sizeof(httpd_uri_t)); i++) {
-            httpd_register_uri_handler(network.httpd, &handlers[i]);
+            httpd_register_uri_handler(httpd, &handlers[i]);
         }
         ESP_LOGI("SERVER", "Started server on port: '%d'", config.server_port);
-        Display.printf("SSID: %s\n\n", network.ssid);
-        Display.printf("http://%s\n\n", network.ipv4);
+        Display.printf("SSID: %s\n\n", WiFi.SSID());
+        Display.printf("http://%s\n\n", WiFi.localIP());
         Display.printf("(Press to toggle)");
     } else {
         Display.printf("Error starting server!");
@@ -588,36 +548,6 @@ void ntpTimeUpdate(const char *host = NTP_SERVER_1)
 }
 
 
-static esp_err_t event_handler(void *ctx, system_event_t *event)
-{
-    switch(event->event_id) {
-        case SYSTEM_EVENT_STA_START:
-            ESP_LOGI("WIFI", "SYSTEM_EVENT_STA_START");
-            ESP_ERROR_CHECK(esp_wifi_connect());
-            network.status = WL_CONNECTING;
-            break;
-        case SYSTEM_EVENT_STA_GOT_IP:
-            strcpy(network.ipv4, ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
-            ESP_LOGI("WIFI", "SYSTEM_EVENT_STA_GOT_IP: %s", network.ipv4);
-            network.status = WL_CONNECTED;
-            break;
-        case SYSTEM_EVENT_STA_DISCONNECTED:
-            ESP_LOGI("WIFI", "SYSTEM_EVENT_STA_DISCONNECTED");
-            network.status = WL_DISCONNECTED;
-            break;
-        case SYSTEM_EVENT_AP_STACONNECTED:
-            ESP_LOGI("WIFI", "SYSTEM_EVENT_AP_STACONNECTED:" MACSTR, MAC2STR(event->event_info.sta_connected.mac));
-            break;
-        case SYSTEM_EVENT_AP_STADISCONNECTED:
-            ESP_LOGI("WIFI", "SYSTEM_EVENT_AP_STADISCONNECTED:" MACSTR, MAC2STR(event->event_info.sta_disconnected.mac));
-            break;
-        default:
-            break;
-    }
-    return ESP_OK;
-}
-
-
 extern "C" void app_main()
 {
     printf("\n################### WEATHER STATION (Version: %s) ###################\n\n", PROJECT_VERSION);
@@ -645,9 +575,6 @@ extern "C" void app_main()
     rtc_gpio_pulldown_dis((gpio_num_t)ACTION_BUTTON_PIN);
     rtc_gpio_pullup_en((gpio_num_t)ACTION_BUTTON_PIN);
 
-    tcpip_adapter_init();
-    esp_log_level_set("wifi", ESP_LOG_WARN);
-    esp_event_loop_init(event_handler, NULL);
     loadConfiguration();
 
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
@@ -661,9 +588,9 @@ extern "C" void app_main()
     }
 
     // Main task
-    const char *wifi_ssid = CFG_STR("wifi.ssid"), *wifi_password = CFG_STR("wifi.password");
-    const long wifi_available = strlen(wifi_ssid) > 0, wifi_timeout = millis() + CFG_INT("wifi.timeout") * 1000;
-    const bool use_network = wifi_available && rtc_millis() >= (next_http_update - 5000);
+    char*wifi_ssid = CFG_STR("wifi.ssid"), *wifi_password = CFG_STR("wifi.password");
+    long wifi_available = strlen(wifi_ssid) > 0, wifi_timeout = millis() + CFG_INT("wifi.timeout") * 1000;
+    bool use_network = wifi_available && rtc_millis() >= (next_http_update - 5000);
 
     if (!wifi_available) {
         ESP_LOGI("WiFi", "Network configuration not found!");
@@ -671,7 +598,7 @@ extern "C" void app_main()
     } else if (use_network) {
         ESP_LOGI("WiFi", "Connecting to: '%s'...", wifi_ssid);
         Display.printf("\nConnecting to\n %s...", wifi_ssid);
-        wifi_start(WIFI_MODE_STA, wifi_ssid, wifi_password, NULL);
+        WiFi.begin(wifi_ssid, wifi_password);
     }
 
     // Poll sensors while wifi connects
@@ -689,13 +616,13 @@ extern "C" void app_main()
     // Now do the http request!
     if (use_network) {
         Display.printf("\n");
-        while (network.status != WL_CONNECTED && millis() < wifi_timeout) {
+        while (WiFi.status() != WL_CONNECTED && millis() < wifi_timeout) {
             Display.printf(".");
             delay(100);
         }
-        if (network.status == WL_CONNECTED) {
-            ESP_LOGI("WiFi", "Connected to: '%s' with IP %s", network.ssid, network.ipv4);
-            Display.printf("Connected!\nIP: %s", network.ipv4);
+        if (WiFi.status() == WL_CONNECTED) {
+            ESP_LOGI("WiFi", "Connected to: '%s' with IP %s", WiFi.SSID(), WiFi.localIP());
+            Display.printf("Connected!\nIP: %s", WiFi.localIP());
             // Start the config server allowing for a remote access
             startConfigurationServer();
             // We don't have to do it every time, but since our RTC drifts 250ms per minute...
@@ -706,7 +633,7 @@ extern "C" void app_main()
             }
         }
         else {
-            ESP_LOGW("WiFi", "Failed to connect to: '%s'", wifi_ssid);
+            ESP_LOGW("WiFi", "Failed to connect to: '%s'", WiFi.SSID());
             Display.printf("\nFailed!");
         }
     }

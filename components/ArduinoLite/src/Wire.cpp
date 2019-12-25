@@ -11,7 +11,7 @@ TwoWire::~TwoWire()
 
 bool TwoWire::begin(int sdaPin, int sclPin)
 {
-    if ((sdaPin < 0 || sclPin < 0) && (sda)) {
+    if (sdaPin < 0 || sclPin < 0) {
         if (init == false) {
             ESP_LOGE("I2C", "SDA and SCL pins must be set in first begin() call");
         }

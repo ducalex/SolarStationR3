@@ -10,6 +10,7 @@ is a wrapper around the native esp-idf API.
 Currently implemented:
 - The basic functions (pinMode, digitalWrite, millis, etc)
 - The Wire library
+- The WiFi library
 - The String library
 
 To be implemented:
@@ -17,7 +18,6 @@ To be implemented:
 
 Could be added for convenience:
 - Stream/Print/Serial (To make display libraries work with no changes)
-- Wifi (to avoid all the boilerplate esp-idf code)
 - SD (to avoid all the boilerplate esp-idf code)
 
 Out of scope:
