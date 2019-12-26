@@ -1,11 +1,7 @@
-#ifndef TwoWire_h
-#define TwoWire_h
+#ifndef _Wire_h_
+#define _Wire_h_
 
-#include "inttypes.h"
-#include "string.h"
-#include "stddef.h"
-#include "esp_log.h"
-#include "driver/gpio.h"
+#include "Arduino.h"
 #include "driver/i2c.h"
 
 class TwoWire
@@ -14,7 +10,7 @@ class TwoWire
     i2c_port_t num;
     gpio_num_t sda = GPIO_NUM_MAX;
     gpio_num_t scl = GPIO_NUM_MAX;
-    i2c_cmd_handle_t cmd;
+    i2c_cmd_handle_t cmd = nullptr;
     bool init = false;
 
     uint8_t rxBuffer[128];
@@ -24,14 +20,15 @@ class TwoWire
   public:
     TwoWire(int8_t num);
     ~TwoWire();
-    bool begin(int sda = -1, int scl = -1);
+    bool begin();
+    bool begin(int sda, int scl);
     void setClock(uint32_t);
     void end(void);
 
     // void onReceive(void (*)(int));
     // void onRequest(void (*)(void));
 
-    void beginTransmission(int address);
+    void beginTransmission(int address, i2c_rw_t type = I2C_MASTER_WRITE);
     uint8_t endTransmission(bool sendStop = true);
     uint8_t requestFrom(int address, size_t size, bool sendStop = true);
 

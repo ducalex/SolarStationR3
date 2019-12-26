@@ -542,8 +542,8 @@ void ntpTimeUpdate(const char *host = NTP_SERVER_1)
 
         ntp_last_adjustment = now_millis;
 
-        ESP_LOGI("NTP", "Received Time: %.24s, we were %lldms %s",
-            ctime(&ntp_time.tv_sec), abs(ntp_time_delta), ntp_time_delta < 0 ? "ahead" : "behind");
+        ESP_LOGI("NTP", "Received Time: %.24s, we were %ldms %s",
+            ctime(&ntp_time.tv_sec), (long)abs(ntp_time_delta), ntp_time_delta < 0 ? "ahead" : "behind");
     }
 }
 

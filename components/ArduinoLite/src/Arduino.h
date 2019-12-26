@@ -2,25 +2,19 @@
 #define ArduinoLite_h
 
 #include "driver/gpio.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "stdlib.h"
 #include "unistd.h"
+#include "math.h"
 #include "WString.h"
-
-#ifdef __cplusplus
-#include <algorithm>
-#include <cmath>
-using std::abs;
-using std::cos;
-using std::sin;
-using std::tan;
-using std::max;
-using std::min;
-#endif
 
 typedef bool boolean;
 typedef uint8_t byte;
 typedef unsigned int word;
+
+#define ARDUINO 100 // Some libraries need this
 
 #define F_CPU (CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * 1000000U)
 
@@ -46,13 +40,13 @@ typedef unsigned int word;
 #define analogWrite(pin, val)
 #define analogRead(pin)
 
-#define attachInterrupt(pin, cb, mode)
+#define attachInterrupt(pin, cb, mode) attachInterruptArg(pin, cb, NULL, mode);
 #define attachInterruptArg(pin, cb, arg, mode)
 #define detachInterrupt(pin)
 
 #define micros()  ((unsigned long)esp_timer_get_time())
 #define millis()  ((unsigned long)(esp_timer_get_time() / 1000ULL))
-#define delay(ms)  delayMicroseconds((ms) * 1000)
+#define delay(ms)  usleep((ms) * 1000)
 #define delayMicroseconds(us)  usleep(us)
 #define yield()  vPortYield()
 #define NOP()  asm volatile ("nop")
@@ -64,24 +58,31 @@ typedef unsigned int word;
 #define pgm_read_float(addr)  ({ typeof(addr) _addr = (addr); *(const float *)(_addr); })
 #define pgm_read_ptr(addr)    ({ typeof(addr) _addr = (addr); *(void * const *)(_addr); })
 
-inline long map(long x, long in_min, long in_max, long out_min, long out_max) {
-  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
+#define bitRead(value, bit)  (((value) >> (bit)) & 0x01)
+#define bitSet(value, bit)   ((value) |= (1UL << (bit)))
+#define bitClear(value, bit) ((value) &= ~(1UL << (bit)))
+#define bitWrite(value, bit, bitval) (bitval ? bitSet(value, bit) : bitClear(value, bit))
+#define lowByte(value)  ((uint8_t)(value))
+#define highByte(value) ((uint8_t)((value) >> 8))
 
-inline void interrupts() {}
-inline void noInterrupts() {}
+#undef abs
+#define abs(x)   ((x) > 0 ? (x) : -(x))
+#define min(a,b) ((a) < (b) ? (a) : (b))
+#define max(a,b) ((a) > (b) ? (a) : (b))
+#define round(x) ((x) >= 0 ? (long)((x) + 0.5) : (long)((x) - 0.5))
+#define constrain(amt, low, high)  ((amt) < (low) ? (low) : ((amt) > (high) ? (high) : (amt)))
+long map(long x, long in_min, long in_max, long out_min, long out_max);
+void randomSeed(long seed);
+long random(long min, long max);
+long random(long max);
 
-// To do:
-// pulseIn()
-// pulseInLong()
-// shiftIn()
-// shiftOut()
-// bit()
-// bitClear()
-// bitRead()
-// bitSet()
-// bitWrite()
-// highByte()
-// lowByte()
+void interrupts();
+void noInterrupts();
+
+unsigned long pulseIn(uint8_t pin, uint8_t state, unsigned long timeout);
+unsigned long pulseInLong(uint8_t pin, uint8_t state, unsigned long timeout);
+
+uint8_t shiftIn(uint8_t dataPin, uint8_t clockPin, uint8_t bitOrder);
+void shiftOut(uint8_t dataPin, uint8_t clockPin, uint8_t bitOrder, uint8_t value);
 
 #endif
