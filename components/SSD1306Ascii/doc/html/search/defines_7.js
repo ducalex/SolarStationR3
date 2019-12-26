@@ -11,6 +11,7 @@ var searchData=
   ['ssd1306_5fchargepump',['SSD1306_CHARGEPUMP',['../_s_s_d1306init_8h.html#ad5f3bf0b48ad6edc82ab0f3d5f1f38f7',1,'SSD1306init.h']]],
   ['ssd1306_5fcomscandec',['SSD1306_COMSCANDEC',['../_s_s_d1306init_8h.html#adc99324d6d22a2997b77a63ea6bf2bfb',1,'SSD1306init.h']]],
   ['ssd1306_5fcomscaninc',['SSD1306_COMSCANINC',['../_s_s_d1306init_8h.html#a369ae001f8683735d9a4783a4113cce2',1,'SSD1306init.h']]],
+  ['ssd1306_5fdeactivate_5fscroll',['SSD1306_DEACTIVATE_SCROLL',['../_s_s_d1306init_8h.html#a227f3a6e509369f291fae65eb8c97bf6',1,'SSD1306init.h']]],
   ['ssd1306_5fdisplayallon',['SSD1306_DISPLAYALLON',['../_s_s_d1306init_8h.html#afbd6adc39acd5752049314fe4384e296',1,'SSD1306init.h']]],
   ['ssd1306_5fdisplayallon_5fresume',['SSD1306_DISPLAYALLON_RESUME',['../_s_s_d1306init_8h.html#a19ba0228ffbe726628ce81819bc85821',1,'SSD1306init.h']]],
   ['ssd1306_5fdisplayoff',['SSD1306_DISPLAYOFF',['../_s_s_d1306init_8h.html#afc679e79b4ab084fac5e1789e0fe7d84',1,'SSD1306init.h']]],

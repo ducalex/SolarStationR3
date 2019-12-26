@@ -1,4 +1,7 @@
 var searchData=
 [
-  ['write',['write',['../class_s_s_d1306_ascii.html#a344281335d089b05e63d97de61c988ab',1,'SSD1306Ascii::write(uint8_t c)'],['../class_s_s_d1306_ascii.html#a90d3e106ad9f0630a4956c73c509d158',1,'SSD1306Ascii::write(const char *s)'],['../class_avr_i2c.html#aee33451c8f3a34320975eb6845aab084',1,'AvrI2c::write()'],['../class_digital_output.html#af78855eb55325dedc24817ee70ae64ed',1,'DigitalOutput::write()']]]
+  ['read',['read',['../class_avr_i2c.html#acbe619382b96fe1899bbdf0d808aa124',1,'AvrI2c']]],
+  ['readfontbyte',['readFontByte',['../all_fonts_8h.html#a0519cefdee34f5982ca1ba8521a13ae8',1,'allFonts.h']]],
+  ['repeatedstart',['repeatedStart',['../class_avr_i2c.html#abf256161193de9acb2235a52a8b422a0',1,'AvrI2c']]],
+  ['row',['row',['../struct_ticker_state.html#aac2945af8db1582f4dc78e31f8d6154c',1,'TickerState::row()'],['../class_s_s_d1306_ascii.html#acaa73cbce657f3863a261c897d586f5b',1,'SSD1306Ascii::row()']]]
 ];

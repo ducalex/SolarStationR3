@@ -4,11 +4,8 @@
 #include "FwUpdater.h"
 #include "ConfigProvider.h"
 #include "cJSON.h"
-#include "sys/time.h"
-#include "sys/socket.h"
 #include "sys/param.h"
 #include "lwip/def.h"
-#include "netdb.h"
 #include "esp_http_client.h"
 #include "esp_http_server.h"
 #include "esp_ota_ops.h"
@@ -20,6 +17,7 @@
 #include "display.h"
 #include "sensors.h"
 #include "ulp.h"
+#include "ntp.h"
 
 typedef struct {
     int64_t  uptime; // Uptime can work before NTP lock, timestamp cannot
@@ -494,60 +492,6 @@ static void httpPushData()
 }
 
 
-// We don't use the built-in sntp because we need to be synchronous and also detect drift
-void ntpTimeUpdate(const char *host = NTP_SERVER_1)
-{
-    int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    struct hostent *server = gethostbyname(host);
-    struct sockaddr_in serv_addr = {};
-    struct timeval timeout = { 2, 0 };
-    struct timeval ntp_time = {0, 0};
-
-    if (server == NULL) {
-        ESP_LOGE("NTP", "Unable to resolve NTP server");
-        return;
-    }
-
-    memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(123);
-
-    uint32_t ntp_packet[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    ((uint8_t*)ntp_packet)[0] = 0x1b; // li, vn, mode.
-
-    int64_t prev_millis = rtc_millis();
-
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-    connect(sockfd, (sockaddr *)&serv_addr, sizeof(serv_addr));
-    send(sockfd, &ntp_packet, sizeof(ntp_packet), 0);
-
-    if (recv(sockfd, &ntp_packet, sizeof(ntp_packet), 0) < 0) {
-        ESP_LOGE("NTP", "Error receiving NTP packet");
-    }
-    else {
-        prev_millis += (rtc_millis() - prev_millis) / 2; // Approx transport time
-        ntp_time.tv_sec = ntohl(ntp_packet[10]) - 2208988800UL; // DIFF_SEC_1900_1970
-        ntp_time.tv_usec = ((int64_t)ntohl(ntp_packet[11]) * 1000000) >> 32;
-        settimeofday(&ntp_time, NULL);
-
-        int64_t now_millis = ((int64_t)ntp_time.tv_sec * 1000000 + ntp_time.tv_usec) / 1000;
-        ntp_time_delta = (now_millis - prev_millis);
-
-        if (ntp_last_adjustment == 0) {
-            first_boot_time += ntp_time_delta;
-        } else {
-            // The 0.5 is to reduce overshoot, it can be adjusted or removed if needed.
-            time_correction += (double)ntp_time_delta / (now_millis - ntp_last_adjustment) * 0.5;
-        }
-
-        ntp_last_adjustment = now_millis;
-
-        ESP_LOGI("NTP", "Received Time: %.24s, we were %ldms %s",
-            ctime(&ntp_time.tv_sec), (long)abs(ntp_time_delta), ntp_time_delta < 0 ? "ahead" : "behind");
-    }
-}
-
-
 extern "C" void app_main()
 {
     printf("\n################### WEATHER STATION (Version: %s) ###################\n\n", PROJECT_VERSION);
@@ -623,10 +567,17 @@ extern "C" void app_main()
         if (WiFi.status() == WL_CONNECTED) {
             ESP_LOGI("WiFi", "Connected to: '%s' with IP %s", WiFi.SSID(), WiFi.localIP());
             Display.printf("Connected!\nIP: %s", WiFi.localIP());
+            // We don't have to do it every time, but since our RTC drifts 250ms per minute...
+            if ((ntp_time_delta = ntpTimeUpdate(NTP_SERVER_1)) > 0) {
+                if (ntp_last_adjustment == 0) {
+                    first_boot_time += ntp_time_delta;
+                } else { // The 0.5 is to reduce overshoot, it can be adjusted or removed if needed.
+                    time_correction += (double)ntp_time_delta / (rtc_millis() - ntp_last_adjustment) * 0.5;
+                }
+                ntp_last_adjustment = rtc_millis();
+            }
             // Start the config server allowing for a remote access
             startConfigurationServer();
-            // We don't have to do it every time, but since our RTC drifts 250ms per minute...
-            ntpTimeUpdate();
             // Then push all our sensors data over HTTP
             if (strlen(CFG_STR("http.update.url")) > 0) {
                 httpPushData();

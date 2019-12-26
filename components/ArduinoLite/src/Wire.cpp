@@ -9,7 +9,6 @@ TwoWire::~TwoWire()
     flush();
 }
 
-
 bool TwoWire::begin()
 {
     if (init == false) {
@@ -23,7 +22,6 @@ bool TwoWire::begin(int sdaPin, int sclPin)
     if (init == true) {
         end();
     }
-
     sda = (gpio_num_t)sdaPin;
     scl = (gpio_num_t)sclPin;
     i2c_config_t conf;
