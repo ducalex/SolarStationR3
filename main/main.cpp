@@ -568,7 +568,7 @@ extern "C" void app_main()
             ESP_LOGI("WiFi", "Connected to: '%s' with IP %s", WiFi.SSID(), WiFi.localIP());
             Display.printf("Connected!\nIP: %s", WiFi.localIP());
             // We don't have to do it every time, but since our RTC drifts 250ms per minute...
-            if ((ntp_time_delta = ntpTimeUpdate(NTP_SERVER_1)) > 0) {
+            if ((ntp_time_delta = ntpTimeUpdate(NTP_SERVER_1)) != 0) {
                 if (ntp_last_adjustment == 0) {
                     first_boot_time += ntp_time_delta;
                 } else { // The 0.5 is to reduce overshoot, it can be adjusted or removed if needed.

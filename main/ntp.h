@@ -33,7 +33,7 @@ long ntpTimeUpdate(const char *host)
 
     if (recv(sockfd, &ntp_packet, sizeof(ntp_packet), 0) < 0) {
         ESP_LOGE("NTP", "Error receiving NTP packet");
-        return -1;
+        return 0;
     }
     else {
         int64_t request_time = (esp_timer_get_time() - prev_micros);
