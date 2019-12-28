@@ -3,6 +3,7 @@
 
 #include "Arduino.h"
 #include "driver/i2c.h"
+#include "Stream.h"
 
 class TwoWire: public Stream
 {

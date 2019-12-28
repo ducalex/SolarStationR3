@@ -11,6 +11,8 @@ static adc_bits_width_t adc_resolution = ADC_WIDTH_BIT_12;
 
 void pinMode(uint8_t pin, uint16_t mode)
 {
+    if (pin == 25) dac_output_disable(DAC_CHANNEL_1);
+    if (pin == 26) dac_output_disable(DAC_CHANNEL_2);
     gpio_set_direction((gpio_num_t)pin, (gpio_mode_t)(mode & 0xFF));
     gpio_set_pull_mode((gpio_num_t)pin, (gpio_pull_mode_t)(mode >> 8));
 }
@@ -52,7 +54,14 @@ void analogReadResolution(uint8_t bits)
 
 void analogWrite(uint8_t pin, uint16_t val)
 {
-
+    if (pin == 25) {
+        dac_output_enable(DAC_CHANNEL_1);
+        dac_output_voltage(DAC_CHANNEL_1, val);
+    }
+    if (pin == 26) {
+        dac_output_enable(DAC_CHANNEL_2);
+        dac_output_voltage(DAC_CHANNEL_2, val);
+    }
 }
 
 void attachInterrupt(uint8_t interrupt, void (*userFunc)(void), int mode, void *arg)
@@ -140,28 +149,25 @@ inline long random(long min, long max)
 
 inline void randomSeed(long seed)
 {
+    //
 }
 
-template <typename T, typename U, typename V>
-inline T constrain(T amt, U low, V high)
+/*
+#include "esp_vfs_fat.h"
+#include "driver/sdmmc_host.h"
+#include "driver/sdspi_host.h"
+bool sd_init(int miso, int mosi, int sck, int cs)
 {
-    return max(min(amt, high), low);
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    sdspi_slot_config_t slot_config = SDSPI_SLOT_CONFIG_DEFAULT();
+    slot_config.gpio_miso = (gpio_num_t)miso;
+    slot_config.gpio_mosi = (gpio_num_t)mosi;
+    slot_config.gpio_sck  = (gpio_num_t)sck;
+    slot_config.gpio_cs   = (gpio_num_t)cs;
+    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+        .format_if_mount_failed = false,
+        .max_files = 8
+    };
+    return esp_vfs_fat_sdmmc_mount(mountPoint, &host, &slot_config, &mount_config, NULL) == ESP_OK;
 }
-
-template <typename T>
-inline T map(T x, T in_min, T in_max, T out_min, T out_max)
-{
-    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
-
-template <typename T, typename U>
-inline T max(T a, U b)
-{
-    return std::max(a, (T)b);
-}
-
-template <typename T, typename U>
-inline T min(T a, U b)
-{
-    return std::min(a, (T)b);
-}
+*/

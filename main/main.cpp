@@ -4,11 +4,8 @@
 #include "FwUpdater.h"
 #include "ConfigProvider.h"
 #include "cJSON.h"
-#include "sys/param.h"
-#include "lwip/def.h"
 #include "esp_http_client.h"
 #include "esp_http_server.h"
-#include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_log.h"
 
@@ -248,7 +245,7 @@ static void startConfigurationServer(bool force_ap = false, bool exclusive = fal
     if (WiFi.status() != WL_CONNECTED || force_ap) {
         ESP_LOGI("SERVER", "Starting Configuration server on access point");
         Display.printf("Starting Access Point...");
-        WiFi.beginAP(CFG_STR("station.name"), "");
+        WiFi.beginAP(CFG_STR("station.name"), (char*)"");
         delay(500);
         ESP_LOGI("SERVER", "Access point started. SSID: %s  IP: %s", WiFi.SSID(), WiFi.localIP());
     }
@@ -296,7 +293,7 @@ static void startConfigurationServer(bool force_ap = false, bool exclusive = fal
         firmware_upgrade_begin();
 
         while (remaining > 0) {
-            int ret = httpd_req_recv(req, fw_buffer, MIN(remaining, 4096));
+            int ret = httpd_req_recv(req, fw_buffer, min(remaining, 4096));
             if (ret <= 0) {
                 return ESP_FAIL;
             }
@@ -570,7 +567,8 @@ extern "C" void app_main()
             // We don't have to do it every time, but since our RTC drifts 250ms per minute...
             if ((ntp_time_delta = ntpTimeUpdate(NTP_SERVER_1)) != 0) {
                 if (ntp_last_adjustment == 0) {
-                    first_boot_time += ntp_time_delta;
+                    //first_boot_time += ntp_time_delta;
+                    first_boot_time = rtc_millis();
                 } else { // The 0.5 is to reduce overshoot, it can be adjusted or removed if needed.
                     time_correction += (double)ntp_time_delta / (rtc_millis() - ntp_last_adjustment) * 0.5;
                 }
