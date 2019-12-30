@@ -43,10 +43,12 @@ bool FwUpdaterClass::begin(size_t size)
     if (target == NULL) {
         if (factory != NULL && current != factory) {
             ESP_LOGW(MODULE, "Single OTA partition in use. Rebooting to factory image to flash from there.");
-            return FWU_ERR_OTA_PARTITION_IN_USE;
+            m_lastError = FWU_ERR_OTA_PARTITION_IN_USE;
+            return false;
         }
         ESP_LOGE(MODULE, "No free OTA partition. Cannot upgrade.");
-        return FWU_ERR_NO_FREE_OTA_PARTITION;
+        m_lastError = FWU_ERR_NO_FREE_OTA_PARTITION;
+        return false;
     }
 
     esp_err_t err = esp_ota_begin(target, size, &m_otaHandle);
