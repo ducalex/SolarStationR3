@@ -1,5 +1,4 @@
 .vscode/*
-build/*
-*.fw
+src/build/*
 sdkconfig
 sdkconfig.old

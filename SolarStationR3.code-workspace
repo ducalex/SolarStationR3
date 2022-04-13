@@ -1,0 +1,29 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"C_Cpp.default.defines": [
+			"INLINE=",
+			"uint=unsigned int",
+			"CONFIG_FREERTOS_HZ=100",
+			"CONFIG_TCPIP_LWIP=1"
+		],
+		"C_Cpp.default.includePath": [
+			"${workspaceFolder}/src/components/**",
+		],
+		"C_Cpp.default.forcedInclude": [
+			"${workspaceFolder}/src/build/config/sdkconfig.h",
+			"${workspaceFolder}/src/build/sdkconfig.h",
+		],
+		"files.trimTrailingWhitespace": true,
+		"files.exclude": {
+			"**/build": true
+		},
+		"files.watcherExclude": {
+			"**/build/**": true,
+		},
+	},
+}

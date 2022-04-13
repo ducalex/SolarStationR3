@@ -7,7 +7,7 @@ It spends most of its time in deep sleep and uses the ULP to track wind.
 
 ## Building 
 
-You will need ESP-IDF version 3.3. All required libraries are bundled for convenience so a `make -j 8` should suffice. If you wish to use upstream libraries instead please note that the Arduino library has been patched for power savings.
+You will need ESP-IDF version 4.0+. All required libraries are bundled for convenience so a `idf.py build` should suffice. If you wish to use upstream libraries instead please note that the Arduino library has been patched for power savings.
 
 ...
 
